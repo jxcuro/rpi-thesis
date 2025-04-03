@@ -22,6 +22,11 @@ ads = ADS.ADS1115(i2c)
 # Use A0 channel for Hall sensor
 hall_sensor = AnalogIn(ads, ADS.P0)
 
+# Sensitivity factor for the Hall sensor (example for a typical sensor, adjust based on your sensor)
+SENSITIVITY_V_PER_TESLA = 0.0004  # Voltage per Tesla (e.g., 0.0004 V/T for a typical sensor)
+# Convert the reading to milliTesla (mT)
+SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
+
 # Create main window
 window = tk.Tk()
 window.title("Camera Feed with Magnetism Measurement")
@@ -35,7 +40,7 @@ feedback_label = tk.Label(window, text="", fg="green", font=("Helvetica", 14))
 feedback_label.pack()
 
 # Create label to display magnetism value
-magnetism_label = tk.Label(window, text="Magnetism: 0.00 V", font=("Helvetica", 14))
+magnetism_label = tk.Label(window, text="Magnetism: 0.00 mT", font=("Helvetica", 14))
 magnetism_label.pack()
 
 
@@ -50,11 +55,19 @@ def update_camera_feed():
     window.after(30, update_camera_feed)
 
 
-# Function to update magnetism measurement
+# Function to update magnetism measurement with scaling
 def update_magnetism():
+    # Get the raw voltage from the Hall sensor
     voltage = hall_sensor.voltage
-    magnetism_label.config(text=f"Magnetism: {voltage:.2f} V")
-    window.after(500, update_magnetism)  # Update every 500ms
+
+    # Convert voltage to milliTesla (mT)
+    magnetism_mT = voltage / SENSITIVITY_V_PER_MILLITESLA  # Using mT for scaling
+
+    # Display the magnetism value
+    magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
+    
+    # Update every 30ms (same as the camera feed)
+    window.after(30, update_magnetism)
 
 
 # Function to capture and save the image with magnetism-based filename
@@ -65,6 +78,7 @@ def capture_photo():
 
     # Get magnetism value
     voltage = hall_sensor.voltage
+    magnetism_mT = voltage / SENSITIVITY_V_PER_MILLITESLA  # Convert to mT
 
     # Get the path to save the image
     save_path = os.path.expanduser('~') + "/Pictures/Thesis/"
@@ -72,7 +86,7 @@ def capture_photo():
 
     # Create a filename based on magnetism value and a unique ID
     unique_id = uuid.uuid4().hex[:8]  # Generate short unique ID
-    file_name = f"mag_{voltage:.2f}_id_{unique_id}.jpg"
+    file_name = f"mag_{magnetism_mT:.2f}_mT_id_{unique_id}.jpg"
     file_path = os.path.join(save_path, file_name)
 
     # Save the image
