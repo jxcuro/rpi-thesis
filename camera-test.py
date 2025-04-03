@@ -16,12 +16,11 @@ window.title("Camera Feed with MobileNetV3 Resolution")
 
 # Create label for displaying the camera feed
 camera_label = tk.Label(window)
-camera_label.pack()
+camera_label.pack(padx=10, pady=10)
 
 # Create label to show feedback when a photo is captured
 feedback_label = tk.Label(window, text="", fg="green", font=("Helvetica", 14))
 feedback_label.pack()
-
 
 # Function to update the camera feed in the GUI (improved frame rate)
 def update_camera_feed():
@@ -43,7 +42,6 @@ def update_camera_feed():
 
     # Call update_camera_feed again after 30ms to improve frame rate
     window.after(30, update_camera_feed)
-
 
 # Function to capture and save the image with feedback
 def capture_photo():
@@ -70,14 +68,13 @@ def capture_photo():
 
     # Provide feedback to the user
     feedback_label.config(text=f"Photo Captured: {current_time}", fg="green")
-
+    
     # Reset feedback after 2 seconds
     window.after(2000, lambda: feedback_label.config(text=""))
 
-
-# Create a button to capture the photo
-capture_button = tk.Button(window, text="Capture Photo", command=capture_photo)
-capture_button.pack()
+# Create a larger button to capture the photo
+capture_button = tk.Button(window, text="Capture Photo", command=capture_photo, height=3, width=20, font=("Helvetica", 14))
+capture_button.pack(pady=10)
 
 # Start the camera feed (initial call to update the feed)
 update_camera_feed()
