@@ -22,9 +22,13 @@ ads = ADS.ADS1115(i2c)
 # Use A0 channel for Hall sensor
 hall_sensor = AnalogIn(ads, ADS.P0)
 
-# Sensitivity factor for the Hall sensor
-SENSITIVITY_MV_PER_GAUSS = 1.75  # Sensitivity in mV/G for the Hall sensor (max sensitivity)
-SENSITIVITY_V_PER_GAUSS = SENSITIVITY_MV_PER_GAUSS / 1000  # Convert mV to V
+# Sensitivity factor for the Hall sensor (1.75 mV/G)
+SENSITIVITY_MV_PER_GAUSS = 1.75  # Sensitivity in mV/G (max)
+SENSITIVITY_V_PER_GAUSS = SENSITIVITY_MV_PER_GAUSS / 1000  # Convert mV to V (1 mV = 0.001 V)
+
+# Conversion constants
+GAUSS_TO_TESLA = 1e-4  # 1 Gauss = 0.0001 Tesla
+TESLA_TO_MILLITESLA = 1000  # 1 Tesla = 1000 milliTesla (mT)
 
 # Create main window
 window = tk.Tk()
@@ -38,8 +42,8 @@ camera_label.pack(padx=10, pady=10)
 feedback_label = tk.Label(window, text="", fg="green", font=("Helvetica", 14))
 feedback_label.pack()
 
-# Create label to display magnetism value
-magnetism_label = tk.Label(window, text="Magnetism: 0.00 G", font=("Helvetica", 14))
+# Create label to display magnetism value in mT
+magnetism_label = tk.Label(window, text="Magnetism: 0.00 mT", font=("Helvetica", 14))
 magnetism_label.pack()
 
 # Function to update the camera feed in the GUI
@@ -60,8 +64,11 @@ def update_magnetism():
     # Convert voltage to Gauss (G) using the sensitivity factor (1.75 mV/G)
     magnetism_gauss = voltage / SENSITIVITY_V_PER_GAUSS  # Using Gauss for scaling
 
-    # Display the magnetism value
-    magnetism_label.config(text=f"Magnetism: {magnetism_gauss:.2f} G")
+    # Convert Gauss to millitesla (mT)
+    magnetism_mT = magnetism_gauss * GAUSS_TO_TESLA * TESLA_TO_MILLITESLA  # Convert to mT
+
+    # Display the magnetism value in mT
+    magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
 
     # Update every 30ms (same as the camera feed)
     window.after(30, update_magnetism)
@@ -75,6 +82,7 @@ def capture_photo():
     # Get magnetism value
     voltage = hall_sensor.voltage
     magnetism_gauss = voltage / SENSITIVITY_V_PER_GAUSS  # Convert to Gauss
+    magnetism_mT = magnetism_gauss * GAUSS_TO_TESLA * TESLA_TO_MILLITESLA  # Convert to mT
 
     # Get the path to save the image
     save_path = os.path.expanduser('~') + "/Pictures/Thesis/"
@@ -82,7 +90,7 @@ def capture_photo():
 
     # Create a filename based on magnetism value and a unique ID
     unique_id = uuid.uuid4().hex[:8]  # Generate short unique ID
-    file_name = f"mag_{magnetism_gauss:.2f}_G_id_{unique_id}.jpg"
+    file_name = f"mag_{magnetism_mT:.2f}_mT_id_{unique_id}.jpg"
     file_path = os.path.join(save_path, file_name)
 
     # Save the image
