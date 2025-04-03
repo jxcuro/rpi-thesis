@@ -26,6 +26,8 @@ hall_sensor = AnalogIn(ads, ADS.P0)
 SENSITIVITY_V_PER_TESLA = 0.0004  # Voltage per Tesla (e.g., 0.0004 V/T for a typical sensor)
 # Convert the reading to milliTesla (mT)
 SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
+# Convert the reading to microTesla (µT)
+SENSITIVITY_V_PER_MICROTESLA = SENSITIVITY_V_PER_TESLA * 1000000  # 1 T = 1,000,000 µT
 
 # Idle voltage (baseline) for your Hall sensor
 IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
@@ -66,11 +68,20 @@ def update_magnetism():
     # Subtract the idle voltage (baseline) to get the actual magnetic field
     adjusted_voltage = voltage - IDLE_VOLTAGE
 
-    # Convert adjusted voltage to milliTesla (mT)
-    magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Using mT for scaling
+    # Convert adjusted voltage to Tesla
+    magnetism_T = adjusted_voltage / SENSITIVITY_V_PER_TESLA  # Using Tesla for scaling
 
-    # Display the magnetism value
-    magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
+    # Convert to mT (milliTesla) and µT (microTesla)
+    magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Using mT for scaling
+    magnetism_uT = adjusted_voltage / SENSITIVITY_V_PER_MICROTESLA  # Using µT for scaling
+
+    # Determine the unit to use based on the magnetism value
+    if magnetism_mT < 1:
+        # If the magnetism is small (less than 1 mT), use microTesla (µT)
+        magnetism_label.config(text=f"Magnetism: {magnetism_uT:.2f} µT ({magnetism_T:.6f} T)")
+    else:
+        # If the magnetism is large enough, use milliTesla (mT)
+        magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT ({magnetism_T:.6f} T)")
 
     # Update every 30ms (same as the camera feed)
     window.after(30, update_magnetism)
@@ -85,7 +96,9 @@ def capture_photo():
     # Get magnetism value
     voltage = hall_sensor.voltage
     adjusted_voltage = voltage - IDLE_VOLTAGE  # Subtract idle voltage to get actual value
+    magnetism_T = adjusted_voltage / SENSITIVITY_V_PER_TESLA  # Convert to T (Tesla)
     magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Convert to mT
+    magnetism_uT = adjusted_voltage / SENSITIVITY_V_PER_MICROTESLA  # Convert to µT
 
     # Get the path to save the image
     save_path = os.path.expanduser('~') + "/Pictures/Thesis/"
@@ -93,7 +106,12 @@ def capture_photo():
 
     # Create a filename based on magnetism value and a unique ID
     unique_id = uuid.uuid4().hex[:8]  # Generate short unique ID
-    file_name = f"mag_{magnetism_mT:.2f}_mT_id_{unique_id}.jpg"
+    if magnetism_mT < 1:
+        # Use µT if the reading is small
+        file_name = f"mag_{magnetism_uT:.2f}_uT_id_{unique_id}.jpg"
+    else:
+        # Use mT if the reading is large enough
+        file_name = f"mag_{magnetism_mT:.2f}_mT_id_{unique_id}.jpg"
     file_path = os.path.join(save_path, file_name)
 
     # Save the image
