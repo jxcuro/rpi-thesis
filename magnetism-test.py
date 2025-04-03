@@ -22,13 +22,13 @@ ads = ADS.ADS1115(i2c)
 # Use A0 channel for Hall sensor
 hall_sensor = AnalogIn(ads, ADS.P0)
 
-# Sensitivity factor for the Hall sensor (1.75 mV/G)
-SENSITIVITY_MV_PER_GAUSS = 1.75  # Sensitivity in mV/G (max)
-SENSITIVITY_V_PER_GAUSS = SENSITIVITY_MV_PER_GAUSS / 1000  # Convert mV to V (1 mV = 0.001 V)
+# Sensitivity factor for the Hall sensor (example for a typical sensor, adjust based on your sensor)
+SENSITIVITY_V_PER_TESLA = 0.0004  # Voltage per Tesla (e.g., 0.0004 V/T for a typical sensor)
+# Convert the reading to milliTesla (mT)
+SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
 
-# Conversion constants
-GAUSS_TO_TESLA = 1e-4  # 1 Gauss = 0.0001 Tesla
-TESLA_TO_MILLITESLA = 1000  # 1 Tesla = 1000 milliTesla (mT)
+# Idle voltage (baseline) for your Hall sensor
+IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
 
 # Create main window
 window = tk.Tk()
@@ -42,9 +42,10 @@ camera_label.pack(padx=10, pady=10)
 feedback_label = tk.Label(window, text="", fg="green", font=("Helvetica", 14))
 feedback_label.pack()
 
-# Create label to display magnetism value in mT
+# Create label to display magnetism value
 magnetism_label = tk.Label(window, text="Magnetism: 0.00 mT", font=("Helvetica", 14))
 magnetism_label.pack()
+
 
 # Function to update the camera feed in the GUI
 def update_camera_feed():
@@ -56,25 +57,24 @@ def update_camera_feed():
     camera_label.configure(image=img_tk)
     window.after(30, update_camera_feed)
 
+
 # Function to update magnetism measurement with scaling
 def update_magnetism():
     # Get the raw voltage from the Hall sensor
     voltage = hall_sensor.voltage
 
-    # Debugging: Print the raw voltage from the Hall sensor
-    print(f"Hall Sensor Voltage: {voltage:.4f} V")  # Debug print to check raw voltage
+    # Subtract the idle voltage (baseline) to get the actual magnetic field
+    adjusted_voltage = voltage - IDLE_VOLTAGE
 
-    # Convert voltage to Gauss (G) using the sensitivity factor (1.75 mV/G)
-    magnetism_gauss = voltage / SENSITIVITY_V_PER_GAUSS  # Using Gauss for scaling
+    # Convert adjusted voltage to milliTesla (mT)
+    magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Using mT for scaling
 
-    # Convert Gauss to millitesla (mT)
-    magnetism_mT = magnetism_gauss * GAUSS_TO_TESLA * TESLA_TO_MILLITESLA  # Convert to mT
-
-    # Display the magnetism value in mT
+    # Display the magnetism value
     magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
 
     # Update every 30ms (same as the camera feed)
     window.after(30, update_magnetism)
+
 
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
@@ -84,8 +84,8 @@ def capture_photo():
 
     # Get magnetism value
     voltage = hall_sensor.voltage
-    magnetism_gauss = voltage / SENSITIVITY_V_PER_GAUSS  # Convert to Gauss
-    magnetism_mT = magnetism_gauss * GAUSS_TO_TESLA * TESLA_TO_MILLITESLA  # Convert to mT
+    adjusted_voltage = voltage - IDLE_VOLTAGE  # Subtract idle voltage to get actual value
+    magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Convert to mT
 
     # Get the path to save the image
     save_path = os.path.expanduser('~') + "/Pictures/Thesis/"
@@ -103,6 +103,7 @@ def capture_photo():
     # Provide feedback to the user
     feedback_label.config(text=f"Photo Captured: {file_name}", fg="green")
     window.after(2000, lambda: feedback_label.config(text=""))
+
 
 # Create a larger button to capture the photo
 capture_button = tk.Button(window, text="Capture Photo", command=capture_photo, height=3, width=20,
