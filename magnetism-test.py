@@ -22,10 +22,9 @@ ads = ADS.ADS1115(i2c)
 # Use A0 channel for Hall sensor
 hall_sensor = AnalogIn(ads, ADS.P0)
 
-# Sensitivity factor for the Hall sensor (example for a typical sensor, adjust based on your sensor)
-SENSITIVITY_V_PER_TESLA = 0.0004  # Voltage per Tesla (e.g., 0.0004 V/T for a typical sensor)
-# Convert the reading to milliTesla (mT)
-SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
+# Sensitivity factor for the Hall sensor
+SENSITIVITY_MV_PER_GAUSS = 1.75  # Sensitivity in mV/G for the Hall sensor (max sensitivity)
+SENSITIVITY_V_PER_GAUSS = SENSITIVITY_MV_PER_GAUSS / 1000  # Convert mV to V
 
 # Create main window
 window = tk.Tk()
@@ -40,9 +39,8 @@ feedback_label = tk.Label(window, text="", fg="green", font=("Helvetica", 14))
 feedback_label.pack()
 
 # Create label to display magnetism value
-magnetism_label = tk.Label(window, text="Magnetism: 0.00 mT", font=("Helvetica", 14))
+magnetism_label = tk.Label(window, text="Magnetism: 0.00 G", font=("Helvetica", 14))
 magnetism_label.pack()
-
 
 # Function to update the camera feed in the GUI
 def update_camera_feed():
@@ -54,21 +52,19 @@ def update_camera_feed():
     camera_label.configure(image=img_tk)
     window.after(30, update_camera_feed)
 
-
 # Function to update magnetism measurement with scaling
 def update_magnetism():
     # Get the raw voltage from the Hall sensor
     voltage = hall_sensor.voltage
 
-    # Convert voltage to milliTesla (mT)
-    magnetism_mT = voltage / SENSITIVITY_V_PER_MILLITESLA  # Using mT for scaling
+    # Convert voltage to Gauss (G) using the sensitivity factor (1.75 mV/G)
+    magnetism_gauss = voltage / SENSITIVITY_V_PER_GAUSS  # Using Gauss for scaling
 
     # Display the magnetism value
-    magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
-    
+    magnetism_label.config(text=f"Magnetism: {magnetism_gauss:.2f} G")
+
     # Update every 30ms (same as the camera feed)
     window.after(30, update_magnetism)
-
 
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
@@ -78,7 +74,7 @@ def capture_photo():
 
     # Get magnetism value
     voltage = hall_sensor.voltage
-    magnetism_mT = voltage / SENSITIVITY_V_PER_MILLITESLA  # Convert to mT
+    magnetism_gauss = voltage / SENSITIVITY_V_PER_GAUSS  # Convert to Gauss
 
     # Get the path to save the image
     save_path = os.path.expanduser('~') + "/Pictures/Thesis/"
@@ -86,7 +82,7 @@ def capture_photo():
 
     # Create a filename based on magnetism value and a unique ID
     unique_id = uuid.uuid4().hex[:8]  # Generate short unique ID
-    file_name = f"mag_{magnetism_mT:.2f}_mT_id_{unique_id}.jpg"
+    file_name = f"mag_{magnetism_gauss:.2f}_G_id_{unique_id}.jpg"
     file_path = os.path.join(save_path, file_name)
 
     # Save the image
@@ -96,7 +92,6 @@ def capture_photo():
     # Provide feedback to the user
     feedback_label.config(text=f"Photo Captured: {file_name}", fg="green")
     window.after(2000, lambda: feedback_label.config(text=""))
-
 
 # Create a larger button to capture the photo
 capture_button = tk.Button(window, text="Capture Photo", command=capture_photo, height=3, width=20,
