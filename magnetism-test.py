@@ -65,23 +65,23 @@ def update_magnetism():
     # Get the raw voltage from the Hall sensor
     voltage = hall_sensor.voltage
 
+    # Get the original magnetism reading in Tesla (before applying the idle voltage)
+    original_magnetism_T = voltage / SENSITIVITY_V_PER_TESLA
+
     # Subtract the idle voltage (baseline) to get the actual magnetic field
     adjusted_voltage = voltage - IDLE_VOLTAGE
 
-    # Convert adjusted voltage to Tesla
-    magnetism_T = adjusted_voltage / SENSITIVITY_V_PER_TESLA  # Using Tesla for scaling
-
-    # Convert to mT (milliTesla) and µT (microTesla)
+    # Convert adjusted voltage to milliTesla (mT) and microTesla (µT)
     magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Using mT for scaling
     magnetism_uT = adjusted_voltage / SENSITIVITY_V_PER_MICROTESLA  # Using µT for scaling
 
     # Determine the unit to use based on the magnetism value
     if magnetism_mT < 1:
         # If the magnetism is small (less than 1 mT), use microTesla (µT)
-        magnetism_label.config(text=f"Magnetism: {magnetism_uT:.2f} µT ({magnetism_T:.6f} T)")
+        magnetism_label.config(text=f"Magnetism: {magnetism_uT:.2f} µT ({original_magnetism_T:.6f} T)")
     else:
         # If the magnetism is large enough, use milliTesla (mT)
-        magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT ({magnetism_T:.6f} T)")
+        magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT ({original_magnetism_T:.6f} T)")
 
     # Update every 30ms (same as the camera feed)
     window.after(30, update_magnetism)
@@ -95,8 +95,8 @@ def capture_photo():
 
     # Get magnetism value
     voltage = hall_sensor.voltage
+    original_magnetism_T = voltage / SENSITIVITY_V_PER_TESLA  # Get the original magnetism in Tesla
     adjusted_voltage = voltage - IDLE_VOLTAGE  # Subtract idle voltage to get actual value
-    magnetism_T = adjusted_voltage / SENSITIVITY_V_PER_TESLA  # Convert to T (Tesla)
     magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Convert to mT
     magnetism_uT = adjusted_voltage / SENSITIVITY_V_PER_MICROTESLA  # Convert to µT
 
