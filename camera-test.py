@@ -50,3 +50,5 @@ window.mainloop()
 
 # Stop the camera when the GUI is closed
 camera.close()
+
+#new
