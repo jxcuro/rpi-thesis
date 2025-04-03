@@ -1,11 +1,12 @@
 import tkinter as tk
-from picamera import PiCamera
+from picamera2 import Picamera2
 from PIL import Image, ImageTk
 import time
 
 # Initialize camera
-camera = PiCamera()
-camera.resolution = (224, 224)  # Set camera resolution to 224x224 for MobileNetV3
+camera = Picamera2()
+camera.configure(camera.create_still_configuration())  # Configure for still images
+camera.start()
 
 # Create main window
 window = tk.Tk()
@@ -15,15 +16,18 @@ window.title("Camera Feed with MobileNetV3 Resolution")
 camera_label = tk.Label(window)
 camera_label.pack()
 
-
 # Function to update the camera feed in the GUI
 def update_camera_feed():
     # Capture image from the camera
-    camera.capture('/home/pi/temp_image.jpg')  # Save the image temporarily
+    frame = camera.capture_array()  # Capture a frame from the camera
 
-    # Open the captured image
-    img = Image.open('/home/pi/temp_image.jpg')
-    img = img.resize((224, 224))  # Resize the image to 224x224 for MobileNetV3
+    # Convert the captured frame to a PIL image
+    img = Image.fromarray(frame)
+
+    # Resize the image to 224x224 for MobileNetV3
+    img = img.resize((224, 224))
+
+    # Convert image to PhotoImage format for displaying in Tkinter
     img_tk = ImageTk.PhotoImage(img)
 
     # Update the label with the new image
@@ -33,11 +37,9 @@ def update_camera_feed():
     # Call update_camera_feed again after 100ms to continuously update the feed
     window.after(100, update_camera_feed)
 
-
 # Function to start the camera feed when the button is clicked
 def start_camera():
     update_camera_feed()
-
 
 # Create a button that starts the camera feed
 button = tk.Button(window, text="Start Camera", command=start_camera)
@@ -45,3 +47,6 @@ button.pack()
 
 # Run the GUI loop
 window.mainloop()
+
+# Stop the camera when the GUI is closed
+camera.close()
