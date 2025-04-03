@@ -2,6 +2,7 @@ import tkinter as tk
 from picamera2 import Picamera2
 from PIL import Image, ImageTk
 import time
+import os
 
 # Initialize camera
 camera = Picamera2()
@@ -37,13 +38,31 @@ def update_camera_feed():
     # Call update_camera_feed again after 100ms to continuously update the feed
     window.after(100, update_camera_feed)
 
-# Function to start the camera feed when the button is clicked
-def start_camera():
-    update_camera_feed()
+# Function to capture and save the image
+def capture_photo():
+    # Capture image from the camera
+    frame = camera.capture_array()
 
-# Create a button that starts the camera feed
-button = tk.Button(window, text="Start Camera", command=start_camera)
-button.pack()
+    # Convert the captured frame to a PIL image
+    img = Image.fromarray(frame)
+
+    # Resize the image to 224x224 for MobileNetV3
+    img = img.resize((224, 224))
+
+    # Get the path to save the image
+    save_path = os.path.expanduser('~') + "/Pictures/Thesis/"
+    os.makedirs(save_path, exist_ok=True)  # Ensure the directory exists
+
+    # Define the file path for saving
+    file_path = os.path.join(save_path, "captured_image.jpg")
+
+    # Save the image
+    img.save(file_path)
+    print(f"Image saved at {file_path}")
+
+# Create a button to capture the photo
+capture_button = tk.Button(window, text="Capture Photo", command=capture_photo)
+capture_button.pack()
 
 # Run the GUI loop
 window.mainloop()
