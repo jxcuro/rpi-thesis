@@ -17,7 +17,7 @@ window.title("Camera Feed with MobileNetV3 Resolution")
 camera_label = tk.Label(window)
 camera_label.pack()
 
-# Function to update the camera feed in the GUI
+# Function to update the camera feed in the GUI (improved frame rate)
 def update_camera_feed():
     # Capture image from the camera
     frame = camera.capture_array()  # Capture a frame from the camera
@@ -35,8 +35,8 @@ def update_camera_feed():
     camera_label.img_tk = img_tk
     camera_label.configure(image=img_tk)
 
-    # Call update_camera_feed again after 100ms to continuously update the feed
-    window.after(100, update_camera_feed)
+    # Call update_camera_feed again after 30ms to improve frame rate
+    window.after(30, update_camera_feed)
 
 # Function to capture and save the image
 def capture_photo():
@@ -63,6 +63,9 @@ def capture_photo():
 # Create a button to capture the photo
 capture_button = tk.Button(window, text="Capture Photo", command=capture_photo)
 capture_button.pack()
+
+# Start the camera feed (initial call to update the feed)
+update_camera_feed()
 
 # Run the GUI loop
 window.mainloop()
