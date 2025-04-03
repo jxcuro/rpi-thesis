@@ -61,6 +61,9 @@ def update_magnetism():
     # Get the raw voltage from the Hall sensor
     voltage = hall_sensor.voltage
 
+    # Debugging: Print the raw voltage from the Hall sensor
+    print(f"Hall Sensor Voltage: {voltage:.4f} V")  # Debug print to check raw voltage
+
     # Convert voltage to Gauss (G) using the sensitivity factor (1.75 mV/G)
     magnetism_gauss = voltage / SENSITIVITY_V_PER_GAUSS  # Using Gauss for scaling
 
