@@ -3,6 +3,7 @@ from picamera2 import Picamera2
 from PIL import Image, ImageTk
 import time
 import os
+from datetime import datetime
 
 # Initialize camera
 camera = Picamera2()
@@ -16,6 +17,11 @@ window.title("Camera Feed with MobileNetV3 Resolution")
 # Create label for displaying the camera feed
 camera_label = tk.Label(window)
 camera_label.pack()
+
+# Create label to show feedback when a photo is captured
+feedback_label = tk.Label(window, text="", fg="green", font=("Helvetica", 14))
+feedback_label.pack()
+
 
 # Function to update the camera feed in the GUI (improved frame rate)
 def update_camera_feed():
@@ -38,7 +44,8 @@ def update_camera_feed():
     # Call update_camera_feed again after 30ms to improve frame rate
     window.after(30, update_camera_feed)
 
-# Function to capture and save the image
+
+# Function to capture and save the image with feedback
 def capture_photo():
     # Capture image from the camera
     frame = camera.capture_array()
@@ -53,12 +60,20 @@ def capture_photo():
     save_path = os.path.expanduser('~') + "/Pictures/Thesis/"
     os.makedirs(save_path, exist_ok=True)  # Ensure the directory exists
 
-    # Define the file path for saving
-    file_path = os.path.join(save_path, "captured_image.jpg")
+    # Create a filename based on the current date and time to avoid overwriting
+    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    file_path = os.path.join(save_path, f"captured_image_{current_time}.jpg")
 
     # Save the image
     img.save(file_path)
     print(f"Image saved at {file_path}")
+
+    # Provide feedback to the user
+    feedback_label.config(text=f"Photo Captured: {current_time}", fg="green")
+
+    # Reset feedback after 2 seconds
+    window.after(2000, lambda: feedback_label.config(text=""))
+
 
 # Create a button to capture the photo
 capture_button = tk.Button(window, text="Capture Photo", command=capture_photo)
