@@ -9,9 +9,10 @@ spi.mode = 0  # Mode 0 (CPOL=0, CPHA=0)
 
 # Function to read RP+L data from LDC1101
 def read_ldc1101_RP():
-    # Send a 16-bit command to the LDC1101 (for example, single-ended reading)
-    command = [0x80]  # Example command for reading RP+L data (16-bit)
-    response = spi.xfer2(command)
+    # Dummy command to trigger the LDC1101 response (this could vary)
+    # For now, sending 0x00 as a placeholder, adjust according to the datasheet
+    command = [0x00]  # Dummy command
+    response = spi.xfer2(command)  # Send command and get response
     
     # Return the received data (this should be the result from LDC1101)
     return response
