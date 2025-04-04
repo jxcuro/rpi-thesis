@@ -69,14 +69,24 @@ def check_status():
 
 # Set the device to active mode
 def set_active_mode():
-    func_mode = read_register(LDC1101_FUNC_MODE)
-    print(f"Functional Mode (before): {func_mode:02x}")
-    if func_mode != 0x01:
+    print("Checking FUNC_MODE before setting...")
+    func_mode_before = read_register(LDC1101_FUNC_MODE)
+    print(f"FUNC_MODE (before): {func_mode_before:02x}")
+    
+    # If FUNC_MODE is not already active (0x01), write it
+    if func_mode_before != 0x01:
         print("Setting LDC1101 to active mode.")
         write_register(LDC1101_FUNC_MODE, 0x01)  # Set to active mode
         time.sleep(0.05)  # Wait for the device to transition into active mode
+
+    # Read FUNC_MODE again after attempting to set it
+    func_mode_after = read_register(LDC1101_FUNC_MODE)
+    print(f"FUNC_MODE (after): {func_mode_after:02x}")
+    
+    if func_mode_after == 0x01:
+        print("LDC1101 is now in active mode.")
     else:
-        print("LDC1101 is already in active mode.")
+        print("Failed to set LDC1101 to active mode.")
 
 # Main function for testing the LDC1101
 def test_ldc1101():
