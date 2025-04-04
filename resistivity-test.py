@@ -6,49 +6,61 @@ import os
 import uuid
 import board
 import busio
-import spidev  # For SPI communication
+import adafruit_ads1x15.ads1115 as ADS
 from adafruit_ads1x15.analog_in import AnalogIn
 from datetime import datetime
+import digitalio
+import adafruit_ltc3105  # This is to simulate the LDC1101 communication in the absence of a dedicated library
 
 # Initialize camera
 camera = Picamera2()
 camera.configure(camera.create_still_configuration())  # Use still configuration for faster capture
 camera.start()
 
-# SPI Setup for LDC1101 (LHR mode for inductance measurement)
-spi = spidev.SpiDev()
-spi.open(0, 0)  # Use SPI bus 0, device 0 (CE0)
-spi.max_speed_hz = 1000000  # 1 MHz clock speed
-spi.mode = 0b01  # SPI Mode 1 (CPOL = 0, CPHA = 1)
+# Initialize I2C and ADS1115
+i2c = busio.I2C(board.SCL, board.SDA)
+ads = ADS.ADS1115(i2c)
 
-# LDC1101 register addresses (just example addresses, please refer to your datasheet)
-LDC1101_REG_CONFIG = 0x00  # Register for configuration (example)
-LDC1101_REG_MEASURE = 0x01  # Register to start measurement (example)
-LDC1101_REG_DATA = 0x02  # Register to read the result (example)
+# Use A0 channel for Hall sensor
+hall_sensor = AnalogIn(ads, ADS.P0)
 
-# LDC1101 Initialization (start the measurement in LHR mode)
-def initialize_ldc1101():
-    # Send command to configure LDC1101 into LHR mode
-    # Refer to LDC1101 datasheet for exact register settings
-    spi.xfer2([LDC1101_REG_CONFIG, 0x00])  # Write to configuration register (adjust for LHR mode)
-    time.sleep(0.1)  # Allow time for the sensor to stabilize
+# Sensitivity factor for the Hall sensor (example for a typical sensor, adjust based on your sensor)
+SENSITIVITY_V_PER_TESLA = 0.0004  # Voltage per Tesla (e.g., 0.0004 V/T for a typical sensor)
+# Convert the reading to milliTesla (mT)
+SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
 
-# Function to read inductance from LDC1101
+# Idle voltage (baseline) for your Hall sensor
+IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
+
+# SPI pins for LDC1101 (Modify as per your wiring)
+CS_PIN = digitalio.DigitalInOut(board.D24)  # Chip Select Pin
+SCK_PIN = board.SCK  # Clock Pin (Pin 23)
+SDI_PIN = board.MOSI  # MOSI Pin (Pin 19)
+SDO_PIN = board.MISO  # MISO Pin (Pin 21)
+
+# Initialize SPI communication
+spi = busio.SPI(SCK_PIN, MOSI=SDI_PIN, MISO=SDO_PIN)
+cs = CS_PIN
+cs.direction = digitalio.Direction.OUTPUT
+cs.value = True  # Disable the chip initially
+
+# Function to communicate with LDC1101 to read inductance (LHR mode)
 def read_inductance():
-    # Send a command to trigger the measurement (this depends on the register structure)
-    spi.xfer2([LDC1101_REG_MEASURE, 0x01])  # Start a measurement (example)
-
-    # Wait for the measurement to complete (adjust timing based on datasheet)
-    time.sleep(0.5)  # Sleep to allow the LDC1101 to finish the measurement (adjust timing)
-
-    # Now read the data (inductance measurement)
-    result = spi.xfer2([LDC1101_REG_DATA, 0x00])  # Read the result register
-    raw_value = (result[0] << 8) | result[1]  # Combine the bytes into a 16-bit value
+    cs.value = False  # Enable chip select
+    time.sleep(0.01)  # Short delay before communication
     
-    # Convert the raw value into an inductance (use scaling factor from datasheet)
-    inductance = raw_value * 0.1  # This scaling factor will vary depending on your setup
+    # Send a command to read inductance (for example, using an appropriate register)
+    # Replace with actual command according to your datasheet and SPI protocol.
+    # For LHR mode, you'd send a specific read command and process the response.
+    
+    # Placeholder example: we will assume a dummy read operation
+    inductance_data = spi.read(2)  # Assuming 2-byte response, adjust as needed
+    
+    cs.value = True  # Disable chip select
+    
+    # Convert response data to inductance value (example)
+    inductance = (inductance_data[0] << 8) + inductance_data[1]
     return inductance
-
 
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
@@ -123,7 +135,7 @@ magnetism_label = tk.Label(controls_frame, text="Magnetism: 0.00 mT", font=("Hel
 magnetism_label.grid(row=1, column=0)
 
 # Create label to display inductance value
-inductance_label = tk.Label(controls_frame, text="Inductance: 0.00 μH", font=("Helvetica", 14))
+inductance_label = tk.Label(controls_frame, text="Inductance: 0.00 µH", font=("Helvetica", 14))
 inductance_label.grid(row=2, column=0)
 
 # Create a larger button to capture the photo
@@ -143,44 +155,30 @@ def update_camera_feed():
     window.after(60, update_camera_feed)  # Update every 60ms for better performance
 
 
-# Function to update magnetism measurement with scaling and units switching
-def update_magnetism():
+# Function to update magnetism and inductance measurements
+def update_measurements():
     # Get the raw voltage from the Hall sensor
     voltage = hall_sensor.voltage
-
-    # Subtract the idle voltage (baseline) to get the actual magnetic field
     adjusted_voltage = voltage - IDLE_VOLTAGE
-
-    # Convert adjusted voltage to milliTesla (mT)
     magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Using mT for scaling
 
-    # Check if the magnetism is below 1 mT, convert to microTesla (μT) if so
+    # Update magnetism label
     if abs(magnetism_mT) < 1:
-        magnetism_uT = magnetism_mT * 1000  # Convert mT to μT
+        magnetism_uT = magnetism_mT * 1000
         magnetism_label.config(text=f"Magnetism: {magnetism_uT:.2f} μT")
     else:
         magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
 
-    # Update every 60ms for better performance
-    window.after(60, update_magnetism)
+    # Get inductance value using LDC1101
+    inductance = read_inductance()
+    inductance_label.config(text=f"Inductance: {inductance:.2f} µH")
+
+    window.after(60, update_measurements)  # Update every 60ms for better performance
 
 
-# Function to update inductance measurement
-def update_inductance():
-    inductance = read_inductance()  # Read inductance from the LDC1101
-    inductance_label.config(text=f"Inductance: {inductance:.2f} μH")  # Update the label
-
-    # Update every 500ms (or adjust as necessary for your system's speed)
-    window.after(500, update_inductance)
-
-
-# Initialize LDC1101
-initialize_ldc1101()
-
-# Start the camera feed, magnetism, and inductance measurement updates
+# Start the camera feed and measurements update
 update_camera_feed()
-update_magnetism()
-update_inductance()
+update_measurements()
 
 # Run the GUI loop
 window.mainloop()
