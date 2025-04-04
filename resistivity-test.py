@@ -1,68 +1,94 @@
 import time
-import spidev
-import csv
+import spidev  # SPI interface library
 
-# Initialize SPI
+# SPI setup
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Using SPI bus 0, CS pin 0
-spi.max_speed_hz = 50000
-spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
+spi.open(0, 0)  # Open SPI bus 0, device 0 (adjust if needed)
+spi.max_speed_hz = 50000  # Adjust SPI speed if necessary
 
-# Define chip select pin (GPIO) if needed
-# GPIO.setmode(GPIO.BCM)
-# GPIO.setup(CS_PIN, GPIO.OUT)
+# Constants for commands based on datasheet
+CMD_INIT = 0x0F  # Initialization command (example, adjust with actual)
+CMD_RP_DATA = 0x01  # Command to read RP data (impedance + inductance)
+CMD_LHR_DATA = 0x02  # Command to read high-resolution inductance (LHR mode)
+CMD_POWER_MODE = 0x10  # Command to set power mode
+CMD_SLEEP_MODE = 0x00  # Command for sleep mode
+CMD_ACTIVE_MODE = 0x01  # Command for active mode
 
-# Function to initialize LDC1101 (power mode, etc.)
+# Function to send a command via SPI and read data
+def spi_write_read(command, num_bytes=2):
+    # Send the command and receive the response
+    response = spi.xfer2([command] + [0x00] * (num_bytes - 1))
+    return response
+
+# Function to set power mode (active, sleep, or shutdown)
+def set_power_mode(mode):
+    print(f"Setting power mode to: {mode}")
+    spi_write_read(CMD_POWER_MODE, 1)
+    time.sleep(0.1)
+
+# Function to initialize LDC1101
 def ldc1101_init():
-    # Set power mode, configure SPI settings, etc.
-    # This function will initialize the LDC1101 for communication
-    pass
+    print("Initializing LDC1101...")
+    # Set to active mode
+    set_power_mode(CMD_ACTIVE_MODE)
+    # Add any specific initialization commands here based on datasheet
+    time.sleep(0.5)
 
-# Function to read RP data (Inductance + Impedance)
-def ldc1101_getRPData():
-    # Send command to the LDC1101 to read RP data
-    # Read the response from the LDC1101
-    data = spi.xfer2([0x00])  # Placeholder for the command
-    rp_data = data[0]  # Read RP data from response
+# Function to read RP (Inductance + Impedance) data
+def read_rp_data():
+    print("Reading RP data...")
+    response = spi_write_read(CMD_RP_DATA, 2)  # Adjust command if needed
+    rp_data = (response[0] << 8) | response[1]
     return rp_data
 
-# Function to read inductance data
-def ldc1101_getInductance():
-    # Send command to read inductance
-    data = spi.xfer2([0x01])  # Placeholder for the inductance command
-    inductance = data[0]  # Read inductance value
-    return inductance
+# Function to read high-resolution inductance (LHR mode)
+def read_lhr_data():
+    print("Reading LHR data...")
+    response = spi_write_read(CMD_LHR_DATA, 2)  # Adjust command if needed
+    lhr_data = (response[0] << 8) | response[1]
+    return lhr_data
 
-# Function to log data to CSV
-def log_data(rp_data, inductance):
-    with open("metal_data.csv", mode="a") as file:
-        writer = csv.writer(file)
-        writer.writerow([time.strftime('%Y-%m-%d %H:%M:%S'), rp_data, inductance])
+# Function to check if the sensor is communicating correctly
+def check_spi_communication():
+    print("Testing SPI communication...")
+    response = spi_write_read(0x01, 2)  # Simple read command to test communication
+    print(f"SPI response: {response}")
+    if response == [0, 0]:
+        print("No valid response received. Check SPI wiring and initialization.")
+    else:
+        print("SPI communication seems fine.")
 
-# Main loop
-def main():
+# Function to display readings from the LDC1101
+def display_readings():
+    print("Starting sensor data readout...")
+    
+    # Check SPI communication
+    check_spi_communication()
+    
+    # Initialize the LDC1101
     ldc1101_init()
     
-    try:
-        while True:
-            # Read RP data (Inductance + Impedance)
-            rp_data = ldc1101_getRPData()
-            
-            # Read inductance data
-            inductance = ldc1101_getInductance()
-            
-            # Display data on LCD (adjust based on your LCD setup)
-            print(f"RP Data: {rp_data}, Inductance: {inductance}")
-            
-            # Log the data to CSV
-            log_data(rp_data, inductance)
-            
-            # Wait before next reading (adjust delay as needed)
-            time.sleep(1)
+    # Wait for sensor to stabilize
+    time.sleep(1)
     
-    except KeyboardInterrupt:
-        print("Program interrupted.")
-        spi.close()
+    # Read RP data
+    rp_data = read_rp_data()
+    print(f"RP Data (Inductance + Impedance): {rp_data}")
+    
+    if rp_data == 0:
+        print("RP data is zero. Ensure the sensor is in range of a conductive object.")
+    
+    # Optional: Read high-resolution inductance data if LHR mode is enabled
+    lhr_data = read_lhr_data()
+    print(f"LHR Data (High-Resolution Inductance): {lhr_data}")
+    
+    if lhr_data == 0:
+        print("LHR data is zero. Ensure the clock signal is provided if using LHR mode.")
 
+# Main script execution
 if __name__ == "__main__":
-    main()
+    # Set power mode to active
+    set_power_mode(CMD_ACTIVE_MODE)
+    
+    # Display sensor readings
+    display_readings()
