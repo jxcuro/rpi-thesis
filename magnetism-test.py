@@ -32,8 +32,8 @@ IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
 
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
-    frame = camera.capture()  # Use capture for faster performance
-    img = Image.open(frame)  # Load the captured image into PIL for manipulation
+    frame = camera.capture_array()  # Use capture_array to get the frame directly
+    img = Image.fromarray(frame)
     img = img.resize((640, 480))  # Resize the image to match display size
 
     # Get magnetism value
@@ -88,13 +88,13 @@ capture_button.grid(row=2, column=0, pady=10)
 
 # Function to update the camera feed in the GUI
 def update_camera_feed():
-    frame = camera.capture()  # Capture a single frame (avoid using capture_array())
-    img = Image.open(frame)  # Open the image captured from the camera
-    img = img.resize((640, 480))  # Resize to fit the screen
+    frame = camera.capture_array()  # Capture a single frame
+    img = Image.fromarray(frame)  # Open the captured image
+    img = img.resize((640, 480))  # Resize the image to fit the screen
     img_tk = ImageTk.PhotoImage(img)
     camera_label.img_tk = img_tk
     camera_label.configure(image=img_tk)
-    window.after(60, update_camera_feed)  # Update every 60ms instead of 30ms for better performance
+    window.after(60, update_camera_feed)  # Update every 60ms for better performance
 
 # Function to update magnetism measurement with scaling and units switching
 def update_magnetism():
@@ -114,7 +114,7 @@ def update_magnetism():
     else:
         magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
 
-    # Update every 60ms instead of 30ms
+    # Update every 60ms for better performance
     window.after(60, update_magnetism)
 
 # Start the camera feed and magnetism measurement updates
