@@ -4,10 +4,10 @@ from PIL import Image, ImageTk
 import time
 import os
 import uuid
-import board
 import busio
 import smbus2
 from adafruit_ads1x15.analog_in import AnalogIn
+import board
 from datetime import datetime
 
 # I2C address for LDC1101 (default is 0x2A)
@@ -28,8 +28,8 @@ camera.start()
 i2c = busio.I2C(board.SCL, board.SDA)
 ads = smbus2.SMBus(1)  # Use smbus2 to communicate with LDC1101
 
-# Use A0 channel for Hall sensor
-hall_sensor = AnalogIn(ads, ADS.P0)
+# Initialize the Hall sensor using ADS1115 (using channel 0)
+hall_sensor = AnalogIn(ads, 0)
 
 # Sensitivity factor for the Hall sensor (example for a typical sensor, adjust based on your sensor)
 SENSITIVITY_V_PER_TESLA = 0.0004  # Voltage per Tesla (e.g., 0.0004 V/T for a typical sensor)
