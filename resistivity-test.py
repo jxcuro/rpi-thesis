@@ -31,6 +31,13 @@ def read_register(reg):
     GPIO.output(LDC1101_CS_PIN, GPIO.HIGH)
     return response[1]  # Return the byte read from the register
 
+# Function to write to a register
+def write_register(reg, value):
+    GPIO.output(LDC1101_CS_PIN, GPIO.LOW)
+    spi.xfer2([reg, value])  # Write value to register
+    GPIO.output(LDC1101_CS_PIN, GPIO.HIGH)
+    time.sleep(0.01)  # Small delay for register write to complete
+
 # Function to read a 16-bit value (for inductance data)
 def read_inductance():
     # Read LSB first, then MSB (LDC1101 data registers)
@@ -60,6 +67,16 @@ def check_status():
     if status & 0x08:
         print("Error: Power-on-reset is active.")
 
+# Set the device to active mode
+def set_active_mode():
+    func_mode = read_register(LDC1101_FUNC_MODE)
+    print(f"Functional Mode (before): {func_mode:02x}")
+    if func_mode != 0x01:
+        print("Setting LDC1101 to active mode.")
+        write_register(LDC1101_FUNC_MODE, 0x01)  # Set to active mode
+    else:
+        print("LDC1101 is already in active mode.")
+
 # Main function for testing the LDC1101
 def test_ldc1101():
     print("Testing LDC1101...")
@@ -69,6 +86,9 @@ def test_ldc1101():
 
     # Check the status register for any error conditions
     check_status()
+
+    # Set LDC1101 to active mode
+    set_active_mode()
 
     # Attempt to read inductance data
     inductance = read_inductance()
