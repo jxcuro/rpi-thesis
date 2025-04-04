@@ -12,7 +12,7 @@ from datetime import datetime
 
 # Initialize camera
 camera = Picamera2()
-camera.configure(camera.create_still_configuration())
+camera.configure(camera.create_video_configuration())  # Use video configuration for continuous capture
 camera.start()
 
 # Initialize I2C and ADS1115
@@ -34,7 +34,7 @@ IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
 def capture_photo():
     frame = camera.capture_array()
     img = Image.fromarray(frame)
-    img = img.resize((640, 480))  # Resize the image to match display size
+    img = img.resize((320, 240))  # Resize the image to match display size for better performance
 
     # Get magnetism value
     voltage = hall_sensor.voltage
@@ -90,11 +90,11 @@ capture_button.grid(row=2, column=0, pady=10)
 def update_camera_feed():
     frame = camera.capture_array()
     img = Image.fromarray(frame)
-    img = img.resize((640, 480))  # Resize the image to a larger size
+    img = img.resize((320, 240))  # Reduce resolution for higher frame rate
     img_tk = ImageTk.PhotoImage(img)
     camera_label.img_tk = img_tk
     camera_label.configure(image=img_tk)
-    window.after(15, update_camera_feed)  # Reduced to 15ms (around 66 FPS)
+    window.after(50, update_camera_feed)  # Update every 50ms (20 FPS)
 
 # Function to update magnetism measurement with scaling and units switching
 def update_magnetism():
@@ -114,8 +114,8 @@ def update_magnetism():
     else:
         magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
 
-    # Update every 15ms (same as the camera feed)
-    window.after(15, update_magnetism)
+    # Update every 50ms (same as the camera feed update rate)
+    window.after(50, update_magnetism)
 
 # Start the camera feed and magnetism measurement updates
 update_camera_feed()
