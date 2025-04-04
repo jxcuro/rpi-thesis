@@ -58,7 +58,7 @@ def start_measurement():
 
 def read_inductance():
     # Read the result from the result register
-    result = spi.xfer([LDC1101_RESULT_REGISTER, 0x00])  # Read the result register
+    result = spi.xfer([LDC1101_RESULT_REGISTER, 0x00, 0x00])  # Read the result register (return 3 bytes)
     inductance_raw = (result[1] << 8) | result[2]  # Combine the 2-byte result into a 16-bit value
     return inductance_raw
 
