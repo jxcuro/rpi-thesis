@@ -1,6 +1,7 @@
 import tkinter as tk
 from picamera2 import Picamera2
 from PIL import Image, ImageTk
+import time
 import os
 import uuid
 import board
@@ -13,9 +14,6 @@ from datetime import datetime
 camera = Picamera2()
 camera.configure(camera.create_still_configuration())
 camera.start()
-
-# Set the camera to a lower resolution for better performance
-camera.resolution = (640, 480)  # Set internal resolution to 640x480 for better performance
 
 # Initialize I2C and ADS1115
 i2c = busio.I2C(board.SCL, board.SDA)
@@ -92,7 +90,7 @@ capture_button.grid(row=2, column=0, pady=10)
 def update_camera_feed():
     frame = camera.capture_array()
     img = Image.fromarray(frame)
-    img = img.resize((224, 224))  # Resize the image to display size in GUI
+    img = img.resize((640, 480))  # Resize the image to a larger size
     img_tk = ImageTk.PhotoImage(img)
     camera_label.img_tk = img_tk
     camera_label.configure(image=img_tk)
