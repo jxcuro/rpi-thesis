@@ -6,8 +6,10 @@ import os
 import uuid
 import board
 import busio
-import spidev
+import adafruit_ads1x15.ads1115 as ADS
+from adafruit_ads1x15.analog_in import AnalogIn
 from datetime import datetime
+import spidev
 
 # Initialize camera
 camera = Picamera2()
@@ -16,13 +18,10 @@ camera.start()
 
 # Initialize I2C and ADS1115
 i2c = busio.I2C(board.SCL, board.SDA)
-#ads = ADS.ADS1115(i2c)  # Removed since it's not used anymore
+ads = ADS.ADS1115(i2c)
 
-# SPI initialization for LDC1101
-spi = spidev.SpiDev()
-spi.open(0, 0)  # Open SPI bus 0, device 0
-spi.max_speed_hz = 50000  # Set SPI speed
-spi.mode = 0b01  # Set SPI mode (check the LDC1101 datasheet for the correct mode)
+# Use A0 channel for Hall sensor
+hall_sensor = AnalogIn(ads, ADS.P0)
 
 # Sensitivity factor for the Hall sensor (example for a typical sensor, adjust based on your sensor)
 SENSITIVITY_V_PER_TESLA = 0.0004  # Voltage per Tesla (e.g., 0.0004 V/T for a typical sensor)
@@ -32,17 +31,18 @@ SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
 # Idle voltage (baseline) for your Hall sensor
 IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
 
-# Function to read the resistivity from LDC1101
+# Initialize SPI for LDC1101 resistivity sensor
+spi = spidev.SpiDev()
+spi.open(0, 0)  # Open SPI bus 0, device 0 (adjust this if necessary)
+spi.max_speed_hz = 50000  # Set SPI speed (adjust as needed)
+
+# Function to read data from LDC1101
 def read_resistivity():
-    # Send a read command to LDC1101 (assuming default register address for resistivity data)
-    # LDC1101 has specific registers; consult the datasheet for accurate addresses and values.
-    resistivity_data = spi.xfer2([0x00, 0x00])  # Example command to read resistivity; modify based on LDC1101 datasheet
-
-    # Convert resistivity data (this is an example, you need to interpret the data according to the LDC1101 datasheet)
-    resistivity_value = (resistivity_data[0] << 8) + resistivity_data[1]  # Combine two bytes of data
-
-    # Return the resistivity value in ohms (or other unit depending on your sensor's calibration)
-    return resistivity_value
+    # Send command to read resistivity (registers and commands are based on LDC1101 datasheet)
+    # Note: Refer to the LDC1101 datasheet for actual command sequences and register configuration
+    adc_result = spi.xfer2([0x30, 0x00])  # Replace with the actual LDC1101 command for resistivity
+    resistivity = (adc_result[0] << 8) | adc_result[1]  # Combine high and low byte
+    return resistivity
 
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
@@ -91,7 +91,6 @@ def capture_photo():
     # Re-enable the button after a short delay (e.g., 2 seconds)
     window.after(2000, lambda: capture_button.config(state=tk.NORMAL))
 
-
 # Create main window
 window = tk.Tk()
 window.title("Camera Feed with Magnetism and Resistivity Measurement")
@@ -117,14 +116,13 @@ magnetism_label = tk.Label(controls_frame, text="Magnetism: 0.00 mT", font=("Hel
 magnetism_label.grid(row=1, column=0)
 
 # Create label to display resistivity value
-resistivity_label = tk.Label(controls_frame, text="Resistivity: 0.00 Ω", font=("Helvetica", 14))
+resistivity_label = tk.Label(controls_frame, text="Resistivity: 0.00", font=("Helvetica", 14))
 resistivity_label.grid(row=2, column=0)
 
 # Create a larger button to capture the photo
 capture_button = tk.Button(controls_frame, text="Capture Photo", command=capture_photo, height=3, width=20,
                            font=("Helvetica", 14))
 capture_button.grid(row=3, column=0, pady=10)
-
 
 # Function to update the camera feed in the GUI
 def update_camera_feed():
@@ -136,9 +134,8 @@ def update_camera_feed():
     camera_label.configure(image=img_tk)
     window.after(60, update_camera_feed)  # Update every 60ms for better performance
 
-
-# Function to update magnetism and resistivity measurements
-def update_measurements():
+# Function to update magnetism measurement with scaling and units switching
+def update_magnetism():
     # Get the raw voltage from the Hall sensor
     voltage = hall_sensor.voltage
 
@@ -155,21 +152,23 @@ def update_measurements():
     else:
         magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
 
-    # Read resistivity value from LDC1101
-    resistivity_value = read_resistivity()
-    resistivity_label.config(text=f"Resistivity: {resistivity_value:.2f} Ω")
-
     # Update every 60ms for better performance
-    window.after(60, update_measurements)
+    window.after(60, update_magnetism)
 
+# Function to update resistivity value in the GUI
+def update_resistivity():
+    resistivity_value = read_resistivity()
+    resistivity_label.config(text=f"Resistivity: {resistivity_value:.2f}")
+    window.after(60, update_resistivity)  # Update every 60ms for better performance
 
-# Start the camera feed and measurement updates
+# Start the camera feed, magnetism updates, and resistivity updates
 update_camera_feed()
-update_measurements()
+update_magnetism()
+update_resistivity()
 
 # Run the GUI loop
 window.mainloop()
 
 # Stop the camera when the GUI is closed
 camera.close()
-spi.close()  # Close the SPI connection when done
+spi.close()  # Close SPI connection when done
