@@ -6,7 +6,6 @@ import os
 import uuid
 import board
 import busio
-import smbus2
 from adafruit_ads1x15.ads1115 import ADS1115
 from adafruit_ads1x15.analog_in import AnalogIn
 from datetime import datetime
@@ -17,8 +16,8 @@ camera.configure(camera.create_still_configuration())  # Use still configuration
 camera.start()
 
 # Initialize I2C for both LDC1101 and ADS1115
-i2c = smbus2.SMBus(1)  # For LDC1101
-ads = ADS1115(i2c)  # Initialize ADS1115 using the same I2C bus
+i2c = busio.I2C(board.SCL, board.SDA)  # Initialize the I2C bus
+ads = ADS1115(i2c)  # Initialize ADS1115 using the I2C bus
 
 # Create AnalogIn instance for Hall sensor (connected to A0 channel)
 hall_sensor = AnalogIn(ads, ADS1115.P0)
