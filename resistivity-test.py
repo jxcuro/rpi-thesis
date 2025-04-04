@@ -9,7 +9,7 @@ import busio
 import spidev
 from datetime import datetime
 from adafruit_ads1x15.analog_in import AnalogIn
-from adafruit_ads1x15.ads1115 import ADS
+from adafruit_ads1x15.ads1115 import ADS1115
 from math import pi
 
 # Initialize camera
