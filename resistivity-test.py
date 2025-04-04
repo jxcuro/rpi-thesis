@@ -10,7 +10,6 @@ import adafruit_ads1x15.ads1115 as ADS
 from adafruit_ads1x15.analog_in import AnalogIn
 from datetime import datetime
 import digitalio
-import adafruit_ltc3105  # This is to simulate the LDC1101 communication in the absence of a dedicated library
 
 # Initialize camera
 camera = Picamera2()
@@ -50,15 +49,19 @@ def read_inductance():
     time.sleep(0.01)  # Short delay before communication
     
     # Send a command to read inductance (for example, using an appropriate register)
-    # Replace with actual command according to your datasheet and SPI protocol.
-    # For LHR mode, you'd send a specific read command and process the response.
-    
+    # The LDC1101 requires specific commands for LHR mode
+    # You need to refer to the LDC1101 datasheet to configure the correct register address
+    # and the command for LHR mode
+    # For now, we'll simulate reading 2 bytes of inductance data
+
     # Placeholder example: we will assume a dummy read operation
-    inductance_data = spi.read(2)  # Assuming 2-byte response, adjust as needed
+    # Modify based on the actual LDC1101 command set
+    inductance_data = spi.read(2)  # Read 2 bytes from the sensor (adjust as necessary)
     
     cs.value = True  # Disable chip select
     
     # Convert response data to inductance value (example)
+    # You will need to process the received data as per the LDC1101 documentation
     inductance = (inductance_data[0] << 8) + inductance_data[1]
     return inductance
 
