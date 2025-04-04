@@ -6,8 +6,9 @@ import os
 import uuid
 import board
 import busio
-from datetime import datetime
 import spidev  # For SPI communication
+from adafruit_ads1x15.analog_in import AnalogIn
+from datetime import datetime
 
 # Initialize camera
 camera = Picamera2()
@@ -48,14 +49,18 @@ def read_inductance():
     inductance = raw_value * 0.1  # This scaling factor will vary depending on your setup
     return inductance
 
+
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
+    # Disable the button to prevent multiple clicks
     capture_button.config(state=tk.DISABLED)
+
+    # Provide instant feedback to the user
     feedback_label.config(text="Capturing photo...", fg="orange")
     window.update()  # Ensure the UI updates immediately
 
     # Capture the image and process the magnetism
-    frame = camera.capture_array()
+    frame = camera.capture_array()  # Use capture_array to get the frame directly
     img = Image.fromarray(frame)
     img = img.resize((640, 480))  # Resize the image to match display size
 
@@ -65,25 +70,31 @@ def capture_photo():
     magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Convert to mT
 
     # Determine the correct unit (mT or μT)
-    if abs(magnetism_mT) < 1:
+    if abs(magnetism_mT) < 1:  # If magnetism is less than 1 mT, use microTesla
         magnetism_uT = magnetism_mT * 1000  # Convert mT to μT
         magnetism_value = f"{magnetism_uT:.2f}"
-        unit = "uT"
+        unit = "uT"  # Use microTesla (μT)
     else:
         magnetism_value = f"{magnetism_mT:.2f}"
-        unit = "mT"
+        unit = "mT"  # Use milliTesla (mT)
 
+    # Get the path to save the image
     save_path = os.path.expanduser('~') + "/Pictures/Thesis/"
     os.makedirs(save_path, exist_ok=True)
 
+    # Create a filename based on magnetism value, unit, and a unique ID
     unique_id = uuid.uuid4().hex[:8]  # Generate short unique ID
     file_name = f"mag_{magnetism_value}_{unit}_id_{unique_id}.jpg"
     file_path = os.path.join(save_path, file_name)
 
+    # Save the image
     img.save(file_path)
     print(f"Image saved at {file_path}")
 
+    # Provide feedback to the user once the image is saved
     feedback_label.config(text=f"Photo Captured: {file_name}", fg="green")
+
+    # Re-enable the button after a short delay (e.g., 2 seconds)
     window.after(2000, lambda: capture_button.config(state=tk.NORMAL))
 
 
@@ -123,9 +134,9 @@ capture_button.grid(row=3, column=0, pady=10)
 
 # Function to update the camera feed in the GUI
 def update_camera_feed():
-    frame = camera.capture_array()
-    img = Image.fromarray(frame)
-    img = img.resize((640, 480))
+    frame = camera.capture_array()  # Capture a single frame
+    img = Image.fromarray(frame)  # Open the captured image
+    img = img.resize((640, 480))  # Resize the image to fit the screen
     img_tk = ImageTk.PhotoImage(img)
     camera_label.img_tk = img_tk
     camera_label.configure(image=img_tk)
@@ -134,14 +145,23 @@ def update_camera_feed():
 
 # Function to update magnetism measurement with scaling and units switching
 def update_magnetism():
+    # Get the raw voltage from the Hall sensor
     voltage = hall_sensor.voltage
+
+    # Subtract the idle voltage (baseline) to get the actual magnetic field
     adjusted_voltage = voltage - IDLE_VOLTAGE
+
+    # Convert adjusted voltage to milliTesla (mT)
     magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Using mT for scaling
+
+    # Check if the magnetism is below 1 mT, convert to microTesla (μT) if so
     if abs(magnetism_mT) < 1:
-        magnetism_uT = magnetism_mT * 1000
+        magnetism_uT = magnetism_mT * 1000  # Convert mT to μT
         magnetism_label.config(text=f"Magnetism: {magnetism_uT:.2f} μT")
     else:
         magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
+
+    # Update every 60ms for better performance
     window.after(60, update_magnetism)
 
 
@@ -149,6 +169,8 @@ def update_magnetism():
 def update_inductance():
     inductance = read_inductance()  # Read inductance from the LDC1101
     inductance_label.config(text=f"Inductance: {inductance:.2f} μH")  # Update the label
+
+    # Update every 500ms (or adjust as necessary for your system's speed)
     window.after(500, update_inductance)
 
 
