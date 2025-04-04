@@ -31,27 +31,50 @@ SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
 # Idle voltage (baseline) for your Hall sensor
 IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
 
-# LDC1101 SPI configuration
-LDC1101_CS_PIN = 5  # Chip select (GPIO 5)
+# Initialize SPI for LDC1101
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Open SPI bus 0, device 0
-spi.max_speed_hz = 50000  # Set SPI speed (adjust as needed)
+spi.open(0, 0)  # SPI bus 0, device 0
+spi.max_speed_hz = 50000  # Adjust speed as needed
 spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
 
-# LDC1101 registers (refer to the LDC1101 datasheet for more details)
-LDC1101_MEASUREMENT_REGISTER = 0x0E  # Register to start measurement
-LDC1101_STATUS_REGISTER = 0x0A      # Register for status
-LDC1101_CHANNELS = [0x01, 0x02]     # Channels for inductance measurement (refer to datasheet)
+# LDC1101 Registers
+LDC1101_MEASUREMENT_REGISTER = 0x0E  # Measurement register (usually 0x0E or similar, depending on the config)
+LDC1101_STATUS_REGISTER = 0x0A  # Status register (used to check if measurement is complete)
+LDC1101_RESULT_REGISTER = 0x10  # Result register (you may need to adjust based on your datasheet)
 
-# Function to read LDC1101 data via SPI
-def read_ldc1101(channel):
-    # Assert chip select
-    spi.xfer([0x00])  # Dummy transfer to assert CS pin
-    time.sleep(0.01)  # Small delay to ensure valid data
+# Channel 0 for inductance measurement
+LDC1101_CHANNEL = 0x01  # The specific channel you're using for the inductance measurement
 
-    # Send read command to the appropriate register
-    result = spi.xfer([channel])
-    return result
+# Read status register
+def check_status():
+    # SPI command to read the status register
+    status = spi.xfer([LDC1101_STATUS_REGISTER, 0x00])  # Read the status register
+    return status
+
+def start_measurement():
+    # Send command to start the measurement
+    spi.xfer([LDC1101_MEASUREMENT_REGISTER, 0x01])  # Write 0x01 to start measurement
+    time.sleep(0.1)  # Delay to let the measurement take place (adjust based on timing)
+
+def read_inductance():
+    # Read the result from the result register
+    result = spi.xfer([LDC1101_RESULT_REGISTER, 0x00])  # Read the result register
+    inductance_raw = (result[1] << 8) | result[2]  # Combine the 2-byte result into a 16-bit value
+    return inductance_raw
+
+def update_inductance():
+    start_measurement()  # Start the measurement
+    status = check_status()  # Check if the LDC1101 is ready
+    print("Status Register:", status)
+
+    if status[0] & 0x01 == 0:  # Check the measurement complete bit in status
+        inductance = read_inductance()  # Read the inductance result
+        print(f"Inductance: {inductance} µH")
+        return inductance
+    else:
+        print("Measurement not complete yet, try again.")
+        return None
+
 
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
@@ -103,7 +126,7 @@ def capture_photo():
 
 # Create main window
 window = tk.Tk()
-window.title("Camera Feed with Magnetism Measurement")
+window.title("Camera Feed with Magnetism and Inductance Measurement")
 
 # Create a frame for organizing camera feed and controls
 frame = tk.Frame(window)
@@ -126,7 +149,7 @@ magnetism_label = tk.Label(controls_frame, text="Magnetism: 0.00 mT", font=("Hel
 magnetism_label.grid(row=1, column=0)
 
 # Create label to display inductance value
-inductance_label = tk.Label(controls_frame, text="Inductance: 0.00 µH", font=("Helvetica", 14))
+inductance_label = tk.Label(controls_frame, text="Inductance: 0 µH", font=("Helvetica", 14))
 inductance_label.grid(row=2, column=0)
 
 # Create a larger button to capture the photo
@@ -164,9 +187,10 @@ def update_magnetism():
     else:
         magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
 
-    # Read inductance from LDC1101 and update the display
-    inductance_value = read_ldc1101(LDC1101_CHANNELS[0])  # Assuming we are reading from channel 1
-    inductance_label.config(text=f"Inductance: {inductance_value[0]} µH")
+    # Get inductance from LDC1101 and update the GUI
+    inductance_value = update_inductance()
+    if inductance_value is not None:
+        inductance_label.config(text=f"Inductance: {inductance_value} µH")
 
     # Update every 60ms for better performance
     window.after(60, update_magnetism)
