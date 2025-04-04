@@ -30,7 +30,6 @@ SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
 # Idle voltage (baseline) for your Hall sensor
 IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
 
-
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
     # Disable the button to prevent multiple clicks
@@ -79,6 +78,14 @@ def capture_photo():
     window.after(2000, lambda: capture_button.config(state=tk.NORMAL))
 
 
+# Function to calibrate idle voltage (when no magnet is near)
+def calibrate_idle_voltage():
+    global IDLE_VOLTAGE
+    IDLE_VOLTAGE = hall_sensor.voltage
+    feedback_label.config(text=f"Calibrated Idle Voltage: {IDLE_VOLTAGE:.4f} V", fg="blue")
+    print(f"[Calibration] New Idle Voltage: {IDLE_VOLTAGE:.4f} V")
+
+
 # Create main window
 window = tk.Tk()
 window.title("Camera Feed with Magnetism Measurement")
@@ -108,6 +115,11 @@ capture_button = tk.Button(controls_frame, text="Capture Photo", command=capture
                            font=("Helvetica", 14))
 capture_button.grid(row=2, column=0, pady=10)
 
+# Button to calibrate idle voltage
+calibrate_button = tk.Button(controls_frame, text="Calibrate Idle Voltage", command=calibrate_idle_voltage,
+                             height=2, width=20, font=("Helvetica", 12))
+calibrate_button.grid(row=3, column=0, pady=5)
+
 
 # Function to update the camera feed in the GUI
 def update_camera_feed():
@@ -124,6 +136,7 @@ def update_camera_feed():
 def update_magnetism():
     # Get the raw voltage from the Hall sensor
     voltage = hall_sensor.voltage
+    print(f"Raw Hall sensor voltage: {voltage:.4f} V")  # For debugging
 
     # Subtract the idle voltage (baseline) to get the actual magnetic field
     adjusted_voltage = voltage - IDLE_VOLTAGE
