@@ -42,20 +42,35 @@ LDC1101_MEASUREMENT_REGISTER = 0x0E  # Register to start measurement
 LDC1101_STATUS_REGISTER = 0x0A      # Register for status
 LDC1101_CHANNELS = [0x01, 0x02]     # Channels for inductance measurement (refer to datasheet)
 
-# Function to read LDC1101 status register
-def read_ldc1101_status():
-    # Read the status register (LDC1101_STATUS_REGISTER)
-    status = spi.xfer([LDC1101_STATUS_REGISTER, 0x00])  # Send a dummy byte to read the status register
+# Function to initialize LDC1101 for LHR mode (Low-Resolution)
+def init_ldc1101_lhr_mode():
+    # Configure the LDC1101 for LHR mode (low-resolution inductance measurement)
+    # These are just example settings, make sure to check your sensor configuration and datasheet.
+    
+    # Assuming control register settings for LHR mode
+    spi.xfer([0x00, 0x00])  # Write settings to control register to enter low-res mode
+
+    # Set up the measurement configuration register with proper settings
+    spi.xfer([0x01, 0x80])  # Example: configure the sensor to measure at low resolution
+
+    print("LDC1101 initialized in LHR mode.")
+
+# Function to check if the measurement is ready
+def check_measurement_ready():
+    status = spi.xfer([LDC1101_STATUS_REGISTER, 0x00])  # Read status register
     print(f"Status Register: {status}")
-    return status[1]
+    if status[1] & 0x01:  # Check the RDY bit to see if the measurement is ready
+        return True
+    return False
 
 # Function to read LDC1101 data (inductance) with better handling
 def read_ldc1101_inductance(channel):
-    # Send a command to initiate measurement (using LHR mode)
+    # Send command to read inductance value
     result = spi.xfer([channel, 0x00])  # Read the inductance value from the channel register
-    # The result should be a 16-bit value, so we combine two bytes if necessary
+    
+    # Combine the MSB and LSB to get the full 16-bit result
     inductance_raw = (result[0] << 8) | result[1]  # Combine MSB and LSB
-    inductance_value = inductance_raw / 1000.0  # Assuming you want the value in µH
+    inductance_value = inductance_raw / 1000.0  # Convert to µH if necessary
     print(f"Inductance Raw Value: {inductance_raw}, Converted Inductance: {inductance_value} µH")
     return inductance_value
 
@@ -176,6 +191,7 @@ def update_magnetism():
     window.after(60, update_magnetism)
 
 # Start the camera feed and magnetism measurement updates
+init_ldc1101_lhr_mode()  # Initialize LDC1101 in LHR mode
 update_camera_feed()
 update_magnetism()
 
