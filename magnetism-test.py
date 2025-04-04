@@ -30,6 +30,34 @@ SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
 # Idle voltage (baseline) for your Hall sensor
 IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
 
+# Function to capture and save the image with magnetism-based filename
+def capture_photo():
+    frame = camera.capture_array()
+    img = Image.fromarray(frame)
+    img = img.resize((640, 480))  # Resize the image to match display size
+
+    # Get magnetism value
+    voltage = hall_sensor.voltage
+    adjusted_voltage = voltage - IDLE_VOLTAGE  # Subtract idle voltage to get actual value
+    magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Convert to mT
+
+    # Get the path to save the image
+    save_path = os.path.expanduser('~') + "/Pictures/Thesis/"
+    os.makedirs(save_path, exist_ok=True)
+
+    # Create a filename based on magnetism value and a unique ID
+    unique_id = uuid.uuid4().hex[:8]  # Generate short unique ID
+    file_name = f"mag_{magnetism_mT:.2f}_mT_id_{unique_id}.jpg"
+    file_path = os.path.join(save_path, file_name)
+
+    # Save the image
+    img.save(file_path)
+    print(f"Image saved at {file_path}")
+
+    # Provide feedback to the user
+    feedback_label.config(text=f"Photo Captured: {file_name}", fg="green")
+    window.after(2000, lambda: feedback_label.config(text=""))
+
 # Create main window
 window = tk.Tk()
 window.title("Camera Feed with Magnetism Measurement")
@@ -88,34 +116,6 @@ def update_magnetism():
 
     # Update every 30ms (same as the camera feed)
     window.after(30, update_magnetism)
-
-# Function to capture and save the image with magnetism-based filename
-def capture_photo():
-    frame = camera.capture_array()
-    img = Image.fromarray(frame)
-    img = img.resize((640, 480))  # Resize the image to match display size
-
-    # Get magnetism value
-    voltage = hall_sensor.voltage
-    adjusted_voltage = voltage - IDLE_VOLTAGE  # Subtract idle voltage to get actual value
-    magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Convert to mT
-
-    # Get the path to save the image
-    save_path = os.path.expanduser('~') + "/Pictures/Thesis/"
-    os.makedirs(save_path, exist_ok=True)
-
-    # Create a filename based on magnetism value and a unique ID
-    unique_id = uuid.uuid4().hex[:8]  # Generate short unique ID
-    file_name = f"mag_{magnetism_mT:.2f}_mT_id_{unique_id}.jpg"
-    file_path = os.path.join(save_path, file_name)
-
-    # Save the image
-    img.save(file_path)
-    print(f"Image saved at {file_path}")
-
-    # Provide feedback to the user
-    feedback_label.config(text=f"Photo Captured: {file_name}", fg="green")
-    window.after(2000, lambda: feedback_label.config(text=""))
 
 # Start the camera feed and magnetism measurement updates
 update_camera_feed()
