@@ -40,39 +40,44 @@ spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
 # LDC1101 registers (refer to the LDC1101 datasheet for more details)
 LDC1101_MEASUREMENT_REGISTER = 0x0E  # Register to start measurement
 LDC1101_STATUS_REGISTER = 0x0A      # Register for status
+LDC1101_CONTROL_REGISTER = 0x00     # Register for control configuration
 LDC1101_CHANNELS = [0x01, 0x02]     # Channels for inductance measurement (refer to datasheet)
 
 # Function to initialize LDC1101 for LHR mode (Low-Resolution)
 def init_ldc1101_lhr_mode():
-    # Configure the LDC1101 for LHR mode (low-resolution inductance measurement)
-    # These are just example settings, make sure to check your sensor configuration and datasheet.
+    # Configure the LDC1101 for LHR mode (24-bit inductance measurement)
+    # Check datasheet to see the exact control register values to enable LHR mode.
     
-    # Assuming control register settings for LHR mode
-    spi.xfer([0x00, 0x00])  # Write settings to control register to enter low-res mode
-
-    # Set up the measurement configuration register with proper settings
-    spi.xfer([0x01, 0x80])  # Example: configure the sensor to measure at low resolution
-
+    # Enable the clock signal on the PWM pin to enable LHR mode
+    # Ensure the clock signal is sent to CLKIN pin for LHR mode
+    spi.xfer([LDC1101_CONTROL_REGISTER, 0x80])  # Example: writing control register value to enable LHR mode
+    
+    # Set the device to LHR mode by configuring the appropriate registers
+    spi.xfer([0x01, 0x40])  # Example: configure for LHR mode (check datasheet for exact values)
+    
     print("LDC1101 initialized in LHR mode.")
 
 # Function to check if the measurement is ready
 def check_measurement_ready():
-    status = spi.xfer([LDC1101_STATUS_REGISTER, 0x00])  # Read status register
+    # Read the status register to check if measurement is ready
+    status = spi.xfer([LDC1101_STATUS_REGISTER, 0x00])
     print(f"Status Register: {status}")
-    if status[1] & 0x01:  # Check the RDY bit to see if the measurement is ready
+    if status[1] & 0x01:  # RDY bit, measurement ready?
         return True
     return False
 
-# Function to read LDC1101 data (inductance) with better handling
+# Function to read LDC1101 data (inductance) in LHR mode
 def read_ldc1101_inductance(channel):
-    # Send command to read inductance value
-    result = spi.xfer([channel, 0x00])  # Read the inductance value from the channel register
-    
-    # Combine the MSB and LSB to get the full 16-bit result
-    inductance_raw = (result[0] << 8) | result[1]  # Combine MSB and LSB
-    inductance_value = inductance_raw / 1000.0  # Convert to µH if necessary
-    print(f"Inductance Raw Value: {inductance_raw}, Converted Inductance: {inductance_value} µH")
-    return inductance_value
+    # Trigger the measurement and wait for completion (waiting until ready)
+    if check_measurement_ready():
+        result = spi.xfer([channel, 0x00])  # Read inductance value from the channel register
+
+        # Combine MSB and LSB to get the full 24-bit result (use 24-bit register for LHR mode)
+        inductance_raw = (result[0] << 16) | (result[1] << 8) | result[2]  # Combine MSB, 8-bit, LSB
+        inductance_value = inductance_raw / 1000.0  # Convert to µH (adjust as needed)
+        print(f"Inductance Raw Value: {inductance_raw}, Converted Inductance: {inductance_value} µH")
+        return inductance_value
+    return None
 
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
@@ -143,60 +148,37 @@ feedback_label.grid(row=0, column=0)
 
 # Create label to display magnetism value
 magnetism_label = tk.Label(controls_frame, text="Magnetism: 0.00 mT", font=("Helvetica", 14))
-magnetism_label.grid(row=1, column=0)
+magnetism_label.grid(row=1, column=0, padx=10, pady=10)
 
-# Create label to display inductance value
-inductance_label = tk.Label(controls_frame, text="Inductance: 0.00 µH", font=("Helvetica", 14))
-inductance_label.grid(row=2, column=0)
+# Create capture button
+capture_button = tk.Button(controls_frame, text="Capture Photo", font=("Helvetica", 14), command=capture_photo)
+capture_button.grid(row=2, column=0, padx=10, pady=10)
 
-# Create a larger button to capture the photo
-capture_button = tk.Button(controls_frame, text="Capture Photo", command=capture_photo, height=3, width=20,
-                           font=("Helvetica", 14))
-capture_button.grid(row=3, column=0, pady=10)
+# Initialize LDC1101 for LHR mode
+init_ldc1101_lhr_mode()
 
-# Function to update the camera feed in the GUI
-def update_camera_feed():
-    frame = camera.capture_array()  # Capture a single frame
-    img = Image.fromarray(frame)  # Open the captured image
-    img = img.resize((640, 480))  # Resize the image to fit the screen
-    img_tk = ImageTk.PhotoImage(img)
-    camera_label.img_tk = img_tk
-    camera_label.configure(image=img_tk)
-    window.after(60, update_camera_feed)  # Update every 60ms for better performance
+# Main loop to display camera feed
+while True:
+    # Capture the current frame from the camera
+    frame = camera.capture_array()
 
-# Function to update magnetism and inductance
-def update_magnetism():
-    # Get the raw voltage from the Hall sensor
-    voltage = hall_sensor.voltage
+    # Convert the frame to an Image object for display in Tkinter
+    img = Image.fromarray(frame)
+    img = img.resize((640, 480))  # Resize the image to match display size
 
-    # Subtract the idle voltage (baseline) to get the actual magnetic field
-    adjusted_voltage = voltage - IDLE_VOLTAGE
+    # Update the Tkinter window with the current frame
+    photo = ImageTk.PhotoImage(img)
+    camera_label.config(image=photo)
+    camera_label.image = photo
 
-    # Convert adjusted voltage to milliTesla (mT)
-    magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Using mT for scaling
+    # Update the Tkinter window
+    window.update_idletasks()
+    window.update()
 
-    # Check if the magnetism is below 1 mT, convert to microTesla (μT) if so
-    if abs(magnetism_mT) < 1:
-        magnetism_uT = magnetism_mT * 1000  # Convert mT to μT
-        magnetism_label.config(text=f"Magnetism: {magnetism_uT:.2f} μT")
-    else:
-        magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
+    # Optional: Read inductance and update it in the UI
+    inductance_value = read_ldc1101_inductance(LDC1101_CHANNELS[0])
+    if inductance_value is not None:
+        magnetism_label.config(text=f"Inductance: {inductance_value:.2f} µH")
 
-    # Read inductance from LDC1101 and update the display
-    inductance_value = read_ldc1101_inductance(LDC1101_CHANNELS[0])  # Assuming we are reading from channel 1
-    print(f"Inductance (raw value): {inductance_value} µH")  # Debugging line
-    inductance_label.config(text=f"Inductance: {inductance_value:.2f} µH")
-
-    # Update every 60ms for better performance
-    window.after(60, update_magnetism)
-
-# Start the camera feed and magnetism measurement updates
-init_ldc1101_lhr_mode()  # Initialize LDC1101 in LHR mode
-update_camera_feed()
-update_magnetism()
-
-# Run the GUI loop
+# Close the window on exit
 window.mainloop()
-
-# Stop the camera when the GUI is closed
-camera.close()
