@@ -94,7 +94,7 @@ def update_camera_feed():
     img_tk = ImageTk.PhotoImage(img)
     camera_label.img_tk = img_tk
     camera_label.configure(image=img_tk)
-    window.after(30, update_camera_feed)
+    window.after(15, update_camera_feed)  # Reduced to 15ms (around 66 FPS)
 
 # Function to update magnetism measurement with scaling and units switching
 def update_magnetism():
@@ -114,8 +114,8 @@ def update_magnetism():
     else:
         magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
 
-    # Update every 30ms (same as the camera feed)
-    window.after(30, update_magnetism)
+    # Update every 15ms (same as the camera feed)
+    window.after(15, update_magnetism)
 
 # Start the camera feed and magnetism measurement updates
 update_camera_feed()
