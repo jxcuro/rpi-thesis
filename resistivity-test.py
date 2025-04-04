@@ -6,78 +6,40 @@ import os
 import uuid
 import board
 import busio
-import adafruit_ads1x15.ads1115 as ADS
-from adafruit_ads1x15.analog_in import AnalogIn
-import spidev
+import spidev  # Import SPI library for communication with LDC1101
+from datetime import datetime
 
 # Initialize camera
 camera = Picamera2()
 camera.configure(camera.create_still_configuration())  # Use still configuration for faster capture
 camera.start()
 
-# Initialize I2C and ADS1115
-i2c = busio.I2C(board.SCL, board.SDA)
-ads = ADS.ADS1115(i2c)
-
-# Use A0 channel for Hall sensor
-hall_sensor = AnalogIn(ads, ADS.P0)
-
-# Sensitivity factor for the Hall sensor (example for a typical sensor, adjust based on your sensor)
-SENSITIVITY_V_PER_TESLA = 0.0004  # Voltage per Tesla (e.g., 0.0004 V/T for a typical sensor)
-# Convert the reading to milliTesla (mT)
-SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
-
-# Idle voltage (baseline) for your Hall sensor
-IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
-
-# LDC1101 SPI configuration
-LDC1101_CS_PIN = 5  # Chip select (GPIO 5)
+# Initialize SPI for LDC1101
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Open SPI bus 0, device 0
-spi.max_speed_hz = 50000  # Set SPI speed (adjust as needed)
-spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
+spi.open(0, 0)  # Use SPI bus 0, device 0 (CE0)
+spi.max_speed_hz = 500000  # Set the SPI clock speed
+spi.mode = 0b00  # Set SPI mode to CPOL = 0, CPHA = 0
 
-# LDC1101 registers (refer to the LDC1101 datasheet for more details)
-LDC1101_MEASUREMENT_REGISTER = 0x0E  # Register to start measurement
-LDC1101_STATUS_REGISTER = 0x0A      # Register for status
-LDC1101_CONTROL_REGISTER = 0x00     # Register for control configuration
-LDC1101_CHANNELS = [0x01, 0x02]     # Channels for inductance measurement (refer to datasheet)
+# LDC1101 Registers (using datasheet values for SPI communication)
+LDC1101_MODE_REGISTER = 0x00
+LDC1101_DATA_REGISTER = 0x01
+LDC1101_STATUS_REGISTER = 0x02
+LDC1101_INTERRUPT_MASK_REGISTER = 0x03
 
-# Function to initialize LDC1101 for LHR mode (Low-Resolution)
-def init_ldc1101_lhr_mode():
-    # Configure the LDC1101 for LHR mode (24-bit inductance measurement)
-    # Check datasheet to see the exact control register values to enable LHR mode.
-    
-    # Enable the clock signal on the PWM pin to enable LHR mode
-    # Ensure the clock signal is sent to CLKIN pin for LHR mode
-    spi.xfer([LDC1101_CONTROL_REGISTER, 0x80])  # Example: writing control register value to enable LHR mode
-    
-    # Set the device to LHR mode by configuring the appropriate registers
-    spi.xfer([0x01, 0x40])  # Example: configure for LHR mode (check datasheet for exact values)
-    
-    print("LDC1101 initialized in LHR mode.")
+LDC1101_LHR_MODE = 0x01  # Set LHR mode
 
-# Function to check if the measurement is ready
-def check_measurement_ready():
-    # Read the status register to check if measurement is ready
-    status = spi.xfer([LDC1101_STATUS_REGISTER, 0x00])
-    print(f"Status Register: {status}")
-    if status[1] & 0x01:  # RDY bit, measurement ready?
-        return True
-    return False
+# Read data from LDC1101 (16-bit data)
+def read_ldc1101_register(register):
+    # Send register address with a read command (0x80) to the device
+    response = spi.xfer2([register | 0x80, 0x00])  # 8-bit address + dummy byte to read
+    # Read the 2-byte response from the LDC1101
+    data = spi.xfer2([0x00, 0x00])  # Send dummy bytes to receive data
+    return (data[0] << 8) | data[1]  # Combine high and low bytes
 
-# Function to read LDC1101 data (inductance) in LHR mode
-def read_ldc1101_inductance(channel):
-    # Trigger the measurement and wait for completion (waiting until ready)
-    if check_measurement_ready():
-        result = spi.xfer([channel, 0x00])  # Read inductance value from the channel register
-
-        # Combine MSB and LSB to get the full 24-bit result (use 24-bit register for LHR mode)
-        inductance_raw = (result[0] << 16) | (result[1] << 8) | result[2]  # Combine MSB, 8-bit, LSB
-        inductance_value = inductance_raw / 1000.0  # Convert to µH (adjust as needed)
-        print(f"Inductance Raw Value: {inductance_raw}, Converted Inductance: {inductance_value} µH")
-        return inductance_value
-    return None
+# Set LDC1101 to LHR mode
+def set_ldc1101_to_LHR():
+    # Write the LHR mode configuration to the mode register
+    spi.xfer2([LDC1101_MODE_REGISTER, LDC1101_LHR_MODE])
 
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
@@ -126,6 +88,7 @@ def capture_photo():
     # Re-enable the button after a short delay (e.g., 2 seconds)
     window.after(2000, lambda: capture_button.config(state=tk.NORMAL))
 
+
 # Create main window
 window = tk.Tk()
 window.title("Camera Feed with Magnetism Measurement")
@@ -148,37 +111,49 @@ feedback_label.grid(row=0, column=0)
 
 # Create label to display magnetism value
 magnetism_label = tk.Label(controls_frame, text="Magnetism: 0.00 mT", font=("Helvetica", 14))
-magnetism_label.grid(row=1, column=0, padx=10, pady=10)
+magnetism_label.grid(row=1, column=0)
 
-# Create capture button
-capture_button = tk.Button(controls_frame, text="Capture Photo", font=("Helvetica", 14), command=capture_photo)
-capture_button.grid(row=2, column=0, padx=10, pady=10)
+# Create a larger button to capture the photo
+capture_button = tk.Button(controls_frame, text="Capture Photo", command=capture_photo, height=3, width=20,
+                           font=("Helvetica", 14))
+capture_button.grid(row=2, column=0, pady=10)
 
-# Initialize LDC1101 for LHR mode
-init_ldc1101_lhr_mode()
 
-# Main loop to display camera feed
-while True:
-    # Capture the current frame from the camera
-    frame = camera.capture_array()
+# Function to update the camera feed in the GUI
+def update_camera_feed():
+    frame = camera.capture_array()  # Capture a single frame
+    img = Image.fromarray(frame)  # Open the captured image
+    img = img.resize((640, 480))  # Resize the image to fit the screen
+    img_tk = ImageTk.PhotoImage(img)
+    camera_label.img_tk = img_tk
+    camera_label.configure(image=img_tk)
+    window.after(60, update_camera_feed)  # Update every 60ms for better performance
 
-    # Convert the frame to an Image object for display in Tkinter
-    img = Image.fromarray(frame)
-    img = img.resize((640, 480))  # Resize the image to match display size
 
-    # Update the Tkinter window with the current frame
-    photo = ImageTk.PhotoImage(img)
-    camera_label.config(image=photo)
-    camera_label.image = photo
+# Function to update inductance (LHR mode) measurement
+def update_inductance():
+    # Set LDC1101 to LHR mode
+    set_ldc1101_to_LHR()
 
-    # Update the Tkinter window
-    window.update_idletasks()
-    window.update()
+    # Read inductance data from LDC1101
+    inductance = read_ldc1101_register(LDC1101_DATA_REGISTER)
 
-    # Optional: Read inductance and update it in the UI
-    inductance_value = read_ldc1101_inductance(LDC1101_CHANNELS[0])
-    if inductance_value is not None:
-        magnetism_label.config(text=f"Inductance: {inductance_value:.2f} µH")
+    # Update the GUI with the inductance value
+    magnetism_label.config(text=f"Inductance: {inductance} μH")  # Assuming the LDC1101 returns values in μH
 
-# Close the window on exit
+    # Update every 100ms for better performance
+    window.after(100, update_inductance)
+
+
+# Start the camera feed and inductance measurement updates
+update_camera_feed()
+update_inductance()
+
+# Run the GUI loop
 window.mainloop()
+
+# Stop the camera when the GUI is closed
+camera.close()
+
+# Close the SPI connection when done
+spi.close()
