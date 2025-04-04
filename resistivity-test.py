@@ -1,94 +1,75 @@
 import time
-import spidev  # SPI interface library
+import spidev  # SPI library for Raspberry Pi
 
 # SPI setup
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Open SPI bus 0, device 0 (adjust if needed)
-spi.max_speed_hz = 50000  # Adjust SPI speed if necessary
+spi.open(0, 0)  # Open SPI bus 0, device 0
+spi.max_speed_hz = 50000  # Set SPI speed to 50 kHz
+spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
 
-# Constants for commands based on datasheet
-CMD_INIT = 0x0F  # Initialization command (example, adjust with actual)
-CMD_RP_DATA = 0x01  # Command to read RP data (impedance + inductance)
-CMD_LHR_DATA = 0x02  # Command to read high-resolution inductance (LHR mode)
+# Commands (Check datasheet for exact commands)
+CMD_INIT = 0x0F  # Initialization command (replace with the correct one)
+CMD_READ_RP = 0x01  # Command to read RP (Impedance + Inductance)
+CMD_READ_LHR = 0x02  # Command to read LHR (High-Resolution Inductance)
 CMD_POWER_MODE = 0x10  # Command to set power mode
-CMD_SLEEP_MODE = 0x00  # Command for sleep mode
-CMD_ACTIVE_MODE = 0x01  # Command for active mode
 
-# Function to send a command via SPI and read data
-def spi_write_read(command, num_bytes=2):
-    # Send the command and receive the response
+# Function to send command and receive response
+def send_command(command, num_bytes=2):
     response = spi.xfer2([command] + [0x00] * (num_bytes - 1))
     return response
 
-# Function to set power mode (active, sleep, or shutdown)
-def set_power_mode(mode):
-    print(f"Setting power mode to: {mode}")
-    spi_write_read(CMD_POWER_MODE, 1)
-    time.sleep(0.1)
+# Function to initialize sensor and set power mode to active
+def initialize_sensor():
+    print("Initializing sensor...")
+    send_command(CMD_INIT, 1)  # Initialize the sensor
+    time.sleep(0.5)  # Give it some time to initialize
 
-# Function to initialize LDC1101
-def ldc1101_init():
-    print("Initializing LDC1101...")
-    # Set to active mode
-    set_power_mode(CMD_ACTIVE_MODE)
-    # Add any specific initialization commands here based on datasheet
-    time.sleep(0.5)
-
-# Function to read RP (Inductance + Impedance) data
-def read_rp_data():
-    print("Reading RP data...")
-    response = spi_write_read(CMD_RP_DATA, 2)  # Adjust command if needed
-    rp_data = (response[0] << 8) | response[1]
-    return rp_data
-
-# Function to read high-resolution inductance (LHR mode)
-def read_lhr_data():
-    print("Reading LHR data...")
-    response = spi_write_read(CMD_LHR_DATA, 2)  # Adjust command if needed
-    lhr_data = (response[0] << 8) | response[1]
-    return lhr_data
-
-# Function to check if the sensor is communicating correctly
+# Function to check the sensor's SPI communication
 def check_spi_communication():
-    print("Testing SPI communication...")
-    response = spi_write_read(0x01, 2)  # Simple read command to test communication
+    print("Checking SPI communication...")
+    response = send_command(0x00, 2)  # Send a simple command (adjust as needed)
     print(f"SPI response: {response}")
     if response == [0, 0]:
-        print("No valid response received. Check SPI wiring and initialization.")
+        print("Error: No response from LDC1101. Check SPI wiring or sensor power.")
     else:
-        print("SPI communication seems fine.")
+        print("SPI communication is working.")
 
-# Function to display readings from the LDC1101
-def display_readings():
-    print("Starting sensor data readout...")
-    
-    # Check SPI communication
+# Function to read the RP data (Inductance + Impedance)
+def read_rp_data():
+    print("Reading RP data...")
+    response = send_command(CMD_READ_RP, 2)  # Command to read RP data
+    rp_data = (response[0] << 8) | response[1]  # Combine bytes
+    print(f"RP Data (Inductance + Impedance): {rp_data}")
+    return rp_data
+
+# Function to read the LHR data (High-Resolution Inductance)
+def read_lhr_data():
+    print("Reading LHR data...")
+    response = send_command(CMD_READ_LHR, 2)  # Command to read LHR data
+    lhr_data = (response[0] << 8) | response[1]  # Combine bytes
+    print(f"LHR Data (High-Resolution Inductance): {lhr_data}")
+    return lhr_data
+
+# Main troubleshooting function
+def run_debug():
+    # Step 1: Check SPI Communication
     check_spi_communication()
     
-    # Initialize the LDC1101
-    ldc1101_init()
+    # Step 2: Initialize the sensor and set power mode to active
+    initialize_sensor()
     
-    # Wait for sensor to stabilize
+    # Step 3: Give sensor time to stabilize
     time.sleep(1)
     
-    # Read RP data
+    # Step 4: Read RP and LHR data
     rp_data = read_rp_data()
-    print(f"RP Data (Inductance + Impedance): {rp_data}")
-    
     if rp_data == 0:
-        print("RP data is zero. Ensure the sensor is in range of a conductive object.")
+        print("RP data is 0. Please check the sensor is in range of a conductive object.")
     
-    # Optional: Read high-resolution inductance data if LHR mode is enabled
     lhr_data = read_lhr_data()
-    print(f"LHR Data (High-Resolution Inductance): {lhr_data}")
-    
     if lhr_data == 0:
-        print("LHR data is zero. Ensure the clock signal is provided if using LHR mode.")
-
+        print("LHR data is 0. Ensure the sensor is powered and in active mode.")
+    
 # Main script execution
 if __name__ == "__main__":
-    # Set power mode to active
-    set_power_mode(CMD_ACTIVE_MODE)
-    
-    # Display sensor readings
-    display_readings()
+    run_debug()
