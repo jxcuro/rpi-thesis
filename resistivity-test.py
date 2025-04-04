@@ -1,11 +1,15 @@
 import spidev
 
+# Initialize SPI1 (SPI bus 1, device 0)
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Open SPI bus 0, device 0 (CE0)
-spi.max_speed_hz = 50000
+spi.open(1, 0)  # SPI bus 1, device 0 (CE0)
 
-# Read 1 byte from MCP3008 (or another SPI device)
-response = spi.xfer2([0x01, 0x80, 0x00])  # Example for MCP3008
-print("SPI response:", response)
+# Set SPI speed and mode (adjust as needed)
+spi.max_speed_hz = 50000
+spi.mode = 0
+
+# Send a test byte
+response = spi.xfer([0x01])
+print("Response:", response)
 
 spi.close()
