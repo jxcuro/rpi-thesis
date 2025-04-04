@@ -8,7 +8,6 @@ import board
 import busio
 import adafruit_ads1x15.ads1115 as ADS
 from adafruit_ads1x15.analog_in import AnalogIn
-from datetime import datetime
 import spidev
 
 # Initialize camera
@@ -52,12 +51,12 @@ def read_ldc1101_status():
 
 # Function to read LDC1101 data (inductance) with better handling
 def read_ldc1101_inductance(channel):
-    # Start measurement by reading from the appropriate channel register
-    # Send the command to start measuring inductance using the LHR mode
+    # Send a command to initiate measurement (using LHR mode)
     result = spi.xfer([channel, 0x00])  # Read the inductance value from the channel register
     # The result should be a 16-bit value, so we combine two bytes if necessary
     inductance_raw = (result[0] << 8) | result[1]  # Combine MSB and LSB
     inductance_value = inductance_raw / 1000.0  # Assuming you want the value in µH
+    print(f"Inductance Raw Value: {inductance_raw}, Converted Inductance: {inductance_value} µH")
     return inductance_value
 
 # Function to capture and save the image with magnetism-based filename
