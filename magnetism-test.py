@@ -41,13 +41,22 @@ def capture_photo():
     adjusted_voltage = voltage - IDLE_VOLTAGE  # Subtract idle voltage to get actual value
     magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Convert to mT
 
+    # Determine the correct unit (mT or μT)
+    if abs(magnetism_mT) < 1:  # If magnetism is less than 1 mT, use microTesla
+        magnetism_uT = magnetism_mT * 1000  # Convert mT to μT
+        magnetism_value = f"{magnetism_uT:.2f}"
+        unit = "uT"  # Use microTesla (μT)
+    else:
+        magnetism_value = f"{magnetism_mT:.2f}"
+        unit = "mT"  # Use milliTesla (mT)
+
     # Get the path to save the image
     save_path = os.path.expanduser('~') + "/Pictures/Thesis/"
     os.makedirs(save_path, exist_ok=True)
 
-    # Create a filename based on magnetism value and a unique ID
+    # Create a filename based on magnetism value, unit, and a unique ID
     unique_id = uuid.uuid4().hex[:8]  # Generate short unique ID
-    file_name = f"mag_{magnetism_mT:.2f}_mT_id_{unique_id}.jpg"
+    file_name = f"mag_{magnetism_value}_{unit}_id_{unique_id}.jpg"
     file_path = os.path.join(save_path, file_name)
 
     # Save the image
