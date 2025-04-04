@@ -41,28 +41,24 @@ spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
 # LDC1101 registers (refer to the LDC1101 datasheet for more details)
 LDC1101_MEASUREMENT_REGISTER = 0x0E  # Register to start measurement
 LDC1101_STATUS_REGISTER = 0x0A      # Register for status
-LDC1101_MODE_REGISTER = 0x21        # Register for mode
 LDC1101_CHANNELS = [0x01, 0x02]     # Channels for inductance measurement (refer to datasheet)
 
-# Function to set LHR mode on LDC1101
-def set_lhr_mode():
-    # Read current mode register
-    current_mode = spi.xfer([LDC1101_MODE_REGISTER, 0x00])  # Read current mode register (dummy write to read)
-    current_mode = current_mode[1]
+# Function to read LDC1101 status register
+def read_ldc1101_status():
+    # Read the status register (LDC1101_STATUS_REGISTER)
+    status = spi.xfer([LDC1101_STATUS_REGISTER, 0x00])  # Send a dummy byte to read the status register
+    print(f"Status Register: {status}")
+    return status[1]
 
-    # Set LHR mode by configuring the relevant bits in the mode register
-    # In the case of the LDC1101, bit 3 is the one used for LHR mode (refer to datasheet for full register info)
-    new_mode = current_mode | (1 << 3)  # Set bit 3 for LHR mode
-    spi.xfer([LDC1101_MODE_REGISTER, new_mode])  # Write new mode to the register
-
-    print("LHR mode set successfully.")
-
-# Function to read LDC1101 data via SPI
-def read_ldc1101(channel):
+# Function to read LDC1101 data (inductance) with better handling
+def read_ldc1101_inductance(channel):
     # Start measurement by reading from the appropriate channel register
     # Send the command to start measuring inductance using the LHR mode
-    result = spi.xfer([channel])  # The result will contain inductance data
-    return result
+    result = spi.xfer([channel, 0x00])  # Read the inductance value from the channel register
+    # The result should be a 16-bit value, so we combine two bytes if necessary
+    inductance_raw = (result[0] << 8) | result[1]  # Combine MSB and LSB
+    inductance_value = inductance_raw / 1000.0  # Assuming you want the value in µH
+    return inductance_value
 
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
@@ -111,7 +107,6 @@ def capture_photo():
     # Re-enable the button after a short delay (e.g., 2 seconds)
     window.after(2000, lambda: capture_button.config(state=tk.NORMAL))
 
-
 # Create main window
 window = tk.Tk()
 window.title("Camera Feed with Magnetism Measurement")
@@ -145,7 +140,6 @@ capture_button = tk.Button(controls_frame, text="Capture Photo", command=capture
                            font=("Helvetica", 14))
 capture_button.grid(row=3, column=0, pady=10)
 
-
 # Function to update the camera feed in the GUI
 def update_camera_feed():
     frame = camera.capture_array()  # Capture a single frame
@@ -156,8 +150,7 @@ def update_camera_feed():
     camera_label.configure(image=img_tk)
     window.after(60, update_camera_feed)  # Update every 60ms for better performance
 
-
-# Function to update magnetism measurement with scaling and units switching
+# Function to update magnetism and inductance
 def update_magnetism():
     # Get the raw voltage from the Hall sensor
     voltage = hall_sensor.voltage
@@ -176,15 +169,12 @@ def update_magnetism():
         magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
 
     # Read inductance from LDC1101 and update the display
-    inductance_value = read_ldc1101(LDC1101_CHANNELS[0])  # Assuming we are reading from channel 1
-    inductance_label.config(text=f"Inductance: {inductance_value[0]} µH")
+    inductance_value = read_ldc1101_inductance(LDC1101_CHANNELS[0])  # Assuming we are reading from channel 1
+    print(f"Inductance (raw value): {inductance_value} µH")  # Debugging line
+    inductance_label.config(text=f"Inductance: {inductance_value:.2f} µH")
 
     # Update every 60ms for better performance
     window.after(60, update_magnetism)
-
-
-# Set LHR mode
-set_lhr_mode()
 
 # Start the camera feed and magnetism measurement updates
 update_camera_feed()
