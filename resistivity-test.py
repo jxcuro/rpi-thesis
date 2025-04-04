@@ -1,125 +1,84 @@
 import time
 import spidev
-import RPi.GPIO as GPIO
 
-# LDC1101 SPI configuration
-LDC1101_CS_PIN = 24   # Chip select (CE0 on Raspberry Pi)
-LDC1101_SCK_PIN = 23  # SPI Clock
-LDC1101_MISO_PIN = 21 # SPI MISO (Master In Slave Out)
-LDC1101_MOSI_PIN = 19 # SPI MOSI (Master Out Slave In)
+# Define the LDC1101 SPI register addresses (update these as per datasheet)
+LDC1101_FUNC_MODE = 0x0B   # Function Mode register
+LDC1101_STATUS_REG = 0x00  # Status register
+LDC1101_POR_READ = 0x10   # Power-On Reset status register
 
-# Initialize GPIO and SPI interface
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(LDC1101_CS_PIN, GPIO.OUT, initial=GPIO.HIGH)
-
+# Initialize SPI
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Bus 0, Device 0 (CE0)
-spi.max_speed_hz = 50000  # Set SPI clock speed
-spi.mode = 0b00  # SPI Mode 0
+spi.open(0, 0)  # Bus 0, Device 0 (ensure correct bus and device numbers)
+spi.max_speed_hz = 5000  # Set a lower SPI speed for debugging (can increase later)
+spi.mode = 0b00  # SPI Mode 0 (CPOL=0, CPHA=0)
 
-# LDC1101 Register addresses
-LDC1101_STATUS_REG = 0x00
-LDC1101_RP_DATA_LSB = 0x21
-LDC1101_RP_DATA_MSB = 0x22
-LDC1101_FUNC_MODE = 0x0B
-LDC1101_POR_READ = 0x0A
-
-# Function to read from a register
-def read_register(reg):
-    GPIO.output(LDC1101_CS_PIN, GPIO.LOW)
-    response = spi.xfer2([reg, 0x00])  # Send register address and dummy byte
-    GPIO.output(LDC1101_CS_PIN, GPIO.HIGH)
-    return response[1]  # Return the byte read from the register
+# Function to read a register
+def read_register(register):
+    response = spi.xfer2([register | 0x80, 0x00])  # Read operation (MSB set to 1)
+    return response[1]  # Return the register value (2nd byte)
 
 # Function to write to a register
-def write_register(reg, value):
-    GPIO.output(LDC1101_CS_PIN, GPIO.LOW)
-    spi.xfer2([reg, value])  # Write value to register
-    GPIO.output(LDC1101_CS_PIN, GPIO.HIGH)
-    time.sleep(0.01)  # Small delay for register write to complete
-
-# Function to read a 16-bit value (for inductance data)
-def read_inductance():
-    # Read LSB first, then MSB (LDC1101 data registers)
-    lsb = read_register(LDC1101_RP_DATA_LSB)
-    msb = read_register(LDC1101_RP_DATA_MSB)
-    inductance = (msb << 8) | lsb
-    return inductance
+def write_register(register, value):
+    spi.xfer2([register, value])  # Write operation
 
 # Check if the LDC1101 is out of reset
 def check_reset():
     por_read = read_register(LDC1101_POR_READ)
+    print(f"POR_READ: {por_read:02x}")
     if por_read & 0x01:
-        print("LDC1101 is in reset mode.")
+        print("LDC1101 is still in reset!")
     else:
         print("LDC1101 is out of reset.")
 
-# Check the status register for errors
+# Set FUNC_MODE to 0x01 (active mode) and verify
+def set_active_mode():
+    print("Setting LDC1101 to active mode...")
+    write_register(LDC1101_FUNC_MODE, 0x01)
+    time.sleep(0.05)  # Wait a bit to allow mode change
+
+    # Read FUNC_MODE multiple times to confirm it's set to 0x01
+    func_mode = read_register(LDC1101_FUNC_MODE)
+    print(f"FUNC_MODE: {func_mode:02x}")
+
+    if func_mode != 0x01:
+        print("Error: LDC1101 is not in active mode!")
+    else:
+        print("LDC1101 is in active mode.")
+
+# Read status register to verify SPI communication
 def check_status():
     status = read_register(LDC1101_STATUS_REG)
     print(f"Status register: {status:02x}")
-    if status & 0x01:
-        print("Error: Conversion error.")
-    if status & 0x02:
-        print("Error: Oscillation failure.")
-    if status & 0x04:
-        print("Error: Frequency out of range.")
-    if status & 0x08:
-        print("Error: Power-on-reset is active.")
-
-# Set the device to active mode
-def set_active_mode():
-    print("Checking FUNC_MODE before setting...")
-    func_mode_before = read_register(LDC1101_FUNC_MODE)
-    print(f"FUNC_MODE (before): {func_mode_before:02x}")
-    
-    # If FUNC_MODE is not already active (0x01), write it
-    if func_mode_before != 0x01:
-        print("Setting LDC1101 to active mode.")
-        write_register(LDC1101_FUNC_MODE, 0x01)  # Set to active mode
-        time.sleep(0.05)  # Wait for the device to transition into active mode
-
-    # Read FUNC_MODE again after attempting to set it
-    func_mode_after = read_register(LDC1101_FUNC_MODE)
-    print(f"FUNC_MODE (after): {func_mode_after:02x}")
-    
-    if func_mode_after == 0x01:
-        print("LDC1101 is now in active mode.")
+    if status == 0x00:
+        print("Status is normal.")
     else:
-        print("Failed to set LDC1101 to active mode.")
+        print(f"Warning: Status indicates error or unexpected condition. Status: {status:02x}")
 
-# Main function for testing the LDC1101
-def test_ldc1101():
-    print("Testing LDC1101...")
+# Read inductance data (for debugging, you may need to use LDC1101's other registers for actual inductance)
+def read_inductance():
+    inductance_data = read_register(LDC1101_STATUS_REG)  # Replace with correct register for inductance
+    print(f"Inductance Data: {inductance_data}")
+    if inductance_data == 0:
+        print("Warning: Inductance value is 0, check connections and configuration.")
+    else:
+        print(f"Inductance: {inductance_data}")
 
-    # Check if the device is in reset
+# Main Debugging Sequence
+def debug_ldc1101():
+    # Step 1: Check if the LDC1101 is out of reset
     check_reset()
 
-    # Check the status register for any error conditions
-    check_status()
-
-    # Set LDC1101 to active mode
+    # Step 2: Set the LDC1101 to active mode
     set_active_mode()
 
-    # Attempt to read inductance data
-    inductance = read_inductance()
-    print(f"Inductance Data: {inductance}")
-    if inductance == 0:
-        print("Warning: Inductance value is 0, check connections and configuration.")
+    # Step 3: Check SPI communication by reading the status register
+    check_status()
 
-    # Check if the device is properly configured (Functional Mode)
-    func_mode = read_register(LDC1101_FUNC_MODE)
-    print(f"Functional Mode: {func_mode:02x}")
-    if func_mode != 0x01:  # Expected mode is active (0x01)
-        print("Warning: LDC1101 is not in active mode. Check FUNC_MODE register configuration.")
+    # Step 4: Read and display inductance data (if possible)
+    read_inductance()
 
-    print("LDC1101 Test Complete.")
+# Run the debugging sequence
+debug_ldc1101()
 
-# Run the test
-try:
-    test_ldc1101()
-except Exception as e:
-    print(f"Error: {e}")
-finally:
-    GPIO.cleanup()  # Clean up GPIO when done
-    spi.close()  # Close SPI interface
+# Close the SPI connection
+spi.close()
