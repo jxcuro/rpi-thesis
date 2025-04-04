@@ -10,21 +10,24 @@ spi.mode = 0b00  # SPI Mode 0 (CPOL = 0, CPHA = 0)
 # LDC1101 register addresses
 REGISTER_CHIP_ID = 0x3F  # Read Chip ID register
 REGISTER_LHRDATA = 0x38  # LHR (Inductance) data register (Low byte)
+REGISTER_CONTROL = 0x00  # Control register (to reset the LDC1101)
+
+# Function to write a value to a register
+def write_register(register, value):
+    spi.xfer2([register, value])
 
 # Function to read a single byte from a register
 def read_register(register):
-    # Send the register address with the Read bit (0x80 for read operation)
     response = spi.xfer2([register | 0x80, 0x00])  # Send register address with read flag
     return response[1]  # Return the byte read
 
-# Function to read 2 bytes of LHR data (Inductance)
-def read_lhr_data():
-    # LHR data is spread across two registers: 0x38 and 0x39
-    high_byte = read_register(REGISTER_LHRDATA)
-    low_byte = read_register(REGISTER_LHRDATA + 1)
-    # Combine the two bytes into a single value
-    lhr_value = (high_byte << 8) | low_byte
-    return lhr_value
+# Function to reset the LDC1101 by setting it to shutdown and then active mode
+def reset_ldc1101():
+    print("Resetting LDC1101...")
+    write_register(REGISTER_CONTROL, 0x80)  # Set to shutdown mode
+    time.sleep(0.1)  # Short delay for shutdown
+    write_register(REGISTER_CONTROL, 0x00)  # Set to active mode
+    time.sleep(0.1)  # Allow some time for the device to initialize
 
 # Function to read the Chip ID
 def read_chip_id():
@@ -35,6 +38,9 @@ def read_chip_id():
 def main():
     print("Testing LDC1101...")
     
+    # Reset the LDC1101 to ensure it’s in the correct state
+    reset_ldc1101()
+    
     # Read the Chip ID (should return 0xD2 if everything is working)
     chip_id = read_chip_id()
     print(f"Chip ID: {hex(chip_id)}")
@@ -43,7 +49,7 @@ def main():
     if chip_id == 0xD2:
         print("LDC1101 Chip ID matches. Proceeding with data read...")
     else:
-        print("Error: Invalid Chip ID. Please check the connection.")
+        print(f"Error: Invalid Chip ID. Got {hex(chip_id)}. Please check the connection.")
         return
     
     # Read LHR data (Inductance)
