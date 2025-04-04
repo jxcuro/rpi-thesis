@@ -1,23 +1,21 @@
 import spidev
 import time
 
-# Open SPI (SPI bus 0, device 0)
+# Initialize SPI
 spi = spidev.SpiDev()
 spi.open(0, 0)  # SPI bus 0, device 0 (CE0)
+spi.max_speed_hz = 50000  # 50 kHz is slow, but enough for testing
+spi.mode = 0  # Mode 0 (CPOL=0, CPHA=0)
 
-# Set SPI parameters
-spi.max_speed_hz = 100000  # Use a lower speed to avoid timing issues
-spi.mode = 0  # Mode 0 (CPOL=0, CPHA=0), this is the default for many devices
-
-# Send a single byte and receive the same byte (loopback)
+# Test loopback: send data and get it back
 print("Sending byte [0x01], expecting loopback.")
-response = spi.xfer2([0x01])  # Send a byte and get response
-print("Response:", response)  # Expect [0x01] if the loopback is working
+response = spi.xfer([0x01])
+print("Response:", response)  # Should return [0x01]
 
-# Send multiple bytes and receive the same bytes (loopback)
-print("Sending bytes [0x01, 0x02, 0x03], expecting a loopback response.")
-response = spi.xfer2([0x01, 0x02, 0x03])
-print("Response:", response)  # Expect [0x01, 0x02, 0x03] if the loopback is working
+# Send multiple bytes and expect loopback
+print("Sending bytes [0x01, 0x02, 0x03], expecting loopback.")
+response = spi.xfer([0x01, 0x02, 0x03])
+print("Response:", response)  # Should return [0x01, 0x02, 0x03]
 
 # Close SPI after use
 spi.close()
