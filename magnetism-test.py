@@ -9,6 +9,7 @@ import busio
 import adafruit_ads1x15.ads1115 as ADS
 from adafruit_ads1x15.analog_in import AnalogIn
 from datetime import datetime
+import adafruit_lcd1101
 
 # Initialize camera
 camera = Picamera2()
@@ -22,6 +23,9 @@ ads = ADS.ADS1115(i2c)
 # Use A0 channel for Hall sensor
 hall_sensor = AnalogIn(ads, ADS.P0)
 
+# Initialize LDC1101 sensor (for resistivity measurement)
+ldc1101 = adafruit_lcd1101.LDC1101(i2c)
+
 # Sensitivity factor for the Hall sensor (example for a typical sensor, adjust based on your sensor)
 SENSITIVITY_V_PER_TESLA = 0.0004  # Voltage per Tesla (e.g., 0.0004 V/T for a typical sensor)
 # Convert the reading to milliTesla (mT)
@@ -30,11 +34,12 @@ SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
 # Idle voltage (baseline) for your Hall sensor
 IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
 
+
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
     # Disable the button to prevent multiple clicks
     capture_button.config(state=tk.DISABLED)
-    
+
     # Provide instant feedback to the user
     feedback_label.config(text="Capturing photo...", fg="orange")
     window.update()  # Ensure the UI updates immediately
@@ -77,9 +82,22 @@ def capture_photo():
     # Re-enable the button after a short delay (e.g., 2 seconds)
     window.after(2000, lambda: capture_button.config(state=tk.NORMAL))
 
+
+# Function to read resistivity from LDC1101 sensor
+def read_resistivity():
+    # Read the raw resistivity value from LDC1101
+    resistivity_value = ldc1101.read_resistivity()
+
+    # Update the resistivity label with the value
+    resistivity_label.config(text=f"Resistivity: {resistivity_value:.2f} Ω")
+
+    # Update every 60ms for better performance
+    window.after(60, read_resistivity)
+
+
 # Create main window
 window = tk.Tk()
-window.title("Camera Feed with Magnetism Measurement")
+window.title("Camera Feed with Magnetism and Resistivity Measurement")
 
 # Create a frame for organizing camera feed and controls
 frame = tk.Frame(window)
@@ -101,9 +119,15 @@ feedback_label.grid(row=0, column=0)
 magnetism_label = tk.Label(controls_frame, text="Magnetism: 0.00 mT", font=("Helvetica", 14))
 magnetism_label.grid(row=1, column=0)
 
+# Create label to display resistivity value
+resistivity_label = tk.Label(controls_frame, text="Resistivity: 0.00 Ω", font=("Helvetica", 14))
+resistivity_label.grid(row=2, column=0)
+
 # Create a larger button to capture the photo
-capture_button = tk.Button(controls_frame, text="Capture Photo", command=capture_photo, height=3, width=20, font=("Helvetica", 14))
-capture_button.grid(row=2, column=0, pady=10)
+capture_button = tk.Button(controls_frame, text="Capture Photo", command=capture_photo, height=3, width=20,
+                           font=("Helvetica", 14))
+capture_button.grid(row=3, column=0, pady=10)
+
 
 # Function to update the camera feed in the GUI
 def update_camera_feed():
@@ -114,6 +138,7 @@ def update_camera_feed():
     camera_label.img_tk = img_tk
     camera_label.configure(image=img_tk)
     window.after(60, update_camera_feed)  # Update every 60ms for better performance
+
 
 # Function to update magnetism measurement with scaling and units switching
 def update_magnetism():
@@ -136,9 +161,11 @@ def update_magnetism():
     # Update every 60ms for better performance
     window.after(60, update_magnetism)
 
-# Start the camera feed and magnetism measurement updates
+
+# Start the camera feed, magnetism measurement, and resistivity updates
 update_camera_feed()
 update_magnetism()
+read_resistivity()
 
 # Run the GUI loop
 window.mainloop()
