@@ -1,13 +1,11 @@
 import spidev
-import time
 
-# Open SPI bus
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Open SPI bus 0, device 0 (usually the default)
-spi.max_speed_hz = 50000  # Set SPI speed
-spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
+spi.open(0, 0)  # Open SPI bus 0, device 0 (CE0)
+spi.max_speed_hz = 50000
 
-# Send a test value and receive the same value
-test_value = [0xAA]  # Sending 0xAA as an example
-response = spi.xfer2(test_value)
-print(f"Loopback SPI response: {response}")
+# Send a test byte
+response = spi.xfer2([0x00])
+print("SPI response:", response)
+
+spi.close()
