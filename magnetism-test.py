@@ -69,7 +69,6 @@ def capture_photo():
 
     # Save the image
     img.save(file_path)
-    print(f"Image saved at {file_path}")
 
     # Provide feedback to the user once the image is saved
     feedback_label.config(text=f"Photo Captured: {file_name}", fg="green")
@@ -83,7 +82,6 @@ def calibrate_idle_voltage():
     global IDLE_VOLTAGE
     IDLE_VOLTAGE = hall_sensor.voltage
     feedback_label.config(text=f"Calibrated Idle Voltage: {IDLE_VOLTAGE:.4f} V", fg="blue")
-    print(f"[Calibration] New Idle Voltage: {IDLE_VOLTAGE:.4f} V")
 
 
 # Create main window
@@ -136,7 +134,6 @@ def update_camera_feed():
 def update_magnetism():
     # Get the raw voltage from the Hall sensor
     voltage = hall_sensor.voltage
-    print(f"Raw Hall sensor voltage: {voltage:.4f} V")  # For debugging
 
     # Subtract the idle voltage (baseline) to get the actual magnetic field
     adjusted_voltage = voltage - IDLE_VOLTAGE
