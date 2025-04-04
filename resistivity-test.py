@@ -24,29 +24,27 @@ def read_register(register):
 
 # Function to initialize the LDC1101 and set it to active mode
 def initialize_ldc1101():
-    for attempt in range(5):  # Try to set the device 5 times
-        print(f"Attempt {attempt + 1}: Setting LDC1101 to active mode...")
-        
-        # Set FUNC_MODE register to 0x01 for Active mode (according to datasheet)
-        write_register(LDC1101_FUNC_MODE_REG, 0x01)
-        time.sleep(0.5)  # Wait for a longer time (500ms) to stabilize
-        
-        # Verify FUNC_MODE after setting it
-        func_mode = read_register(LDC1101_FUNC_MODE_REG)
-        print(f"FUNC_MODE after setting: {func_mode:#04x}")  # Ensure it's 0x01
-        
-        # Check if the device has transitioned to active mode
-        status = read_register(LDC1101_STATUS_REG)
-        print(f"Status Register after setting active mode: {status:#04x}")
-        
-        if status != 0x00:
-            print("Device has exited reset mode and is active.")
-            break
-        else:
-            print("Device still in reset mode, retrying...")
-        
-        # If it has not exited reset mode, wait and retry
-        time.sleep(1)
+    print("Setting LDC1101 to active mode...")
+    # Set FUNC_MODE register to 0x02 for Active mode
+    write_register(LDC1101_FUNC_MODE_REG, 0x02)
+    time.sleep(0.5)  # Wait for a longer time (500ms) to stabilize
+
+    # Verify FUNC_MODE after setting it
+    func_mode = read_register(LDC1101_FUNC_MODE_REG)
+    print(f"FUNC_MODE after setting: {func_mode:#04x}")  # Ensure it's 0x02 (Active mode)
+
+# Function to read the status register to verify if the device is in active mode
+def read_status():
+    status = read_register(LDC1101_STATUS_REG)  # Read status register
+    print(f"Status Register: {status:#04x}")  # Print status in hex format
+    if status == 0x00:
+        print("The device is still in reset mode.")
+    elif status == 0x01:
+        print("The device is in idle mode.")
+    elif status == 0x02:
+        print("The device is in active mode.")
+    else:
+        print("Unknown status.")
 
 # Function to read the inductance value
 def read_inductance():
@@ -68,6 +66,7 @@ def read_inductance():
 # Main function to run the test
 def main():
     initialize_ldc1101()  # Initialize LDC1101 and set it to active mode
+    read_status()  # Check the status register after setting to active mode
     time.sleep(0.5)  # Wait a little before taking a reading
     read_inductance()  # Read and print the inductance data
 
