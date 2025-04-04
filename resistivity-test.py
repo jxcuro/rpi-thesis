@@ -24,7 +24,7 @@ camera = Picamera2()
 camera.configure(camera.create_still_configuration())  # Use still configuration for faster capture
 camera.start()
 
-# Initialize I2C and ADS1115 for Hall sensor
+# Initialize I2C and SMBus2 for LDC1101 and ADS1115 for Hall sensor
 i2c = busio.I2C(board.SCL, board.SDA)
 ads = smbus2.SMBus(1)  # Use smbus2 to communicate with LDC1101
 
@@ -133,10 +133,16 @@ def update_camera_feed():
 
 # Function to read resistivity from the LDC1101
 def read_resistivity():
-    # Read the resistivity register (make sure to check datasheet for the actual register)
-    resistivity_data = ads.read_i2c_block_data(LDC1101_ADDR, LDC1101_REG_RESISTIVITY, 2)
-    resistivity = (resistivity_data[0] << 8) + resistivity_data[1]
-    return resistivity  # Return resistivity value in raw form, or apply scaling if needed
+    try:
+        # Read 2-byte resistivity data from the LDC1101 register
+        resistivity_data = i2c.read_i2c_block_data(LDC1101_ADDR, LDC1101_REG_RESISTIVITY, 2)
+        # Combine the two bytes to form a 16-bit value
+        resistivity = (resistivity_data[0] << 8) + resistivity_data[1]
+        # Return resistivity value (you may need to scale it based on your sensor's characteristics)
+        return resistivity
+    except Exception as e:
+        print(f"Error reading resistivity: {e}")
+        return 0
 
 
 # Function to update magnetism and resistivity measurements
