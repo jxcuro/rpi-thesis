@@ -54,15 +54,20 @@ def read_inductance():
     # and the command for LHR mode
     # For now, we'll simulate reading 2 bytes of inductance data
 
-    # Placeholder example: we will assume a dummy read operation
+    # Placeholder example: We will send a dummy command, like 0x00, for testing
     # Modify based on the actual LDC1101 command set
-    inductance_data = spi.read(2)  # Read 2 bytes from the sensor (adjust as necessary)
-    
+    command = bytearray([0x00, 0x00])  # Replace with appropriate LDC1101 command
+
+    # Send command and receive response into a buffer
+    response = bytearray(2)  # Buffer to hold 2 bytes of data
+    spi.write(command)  # Send the command
+    spi.readinto(response)  # Read 2 bytes into response buffer
+
     cs.value = True  # Disable chip select
     
     # Convert response data to inductance value (example)
     # You will need to process the received data as per the LDC1101 documentation
-    inductance = (inductance_data[0] << 8) + inductance_data[1]
+    inductance = (response[0] << 8) + response[1]  # Combine bytes to form a value
     return inductance
 
 # Function to capture and save the image with magnetism-based filename
