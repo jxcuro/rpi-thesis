@@ -114,8 +114,8 @@ def update_magnetism():
     else:
         magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
 
-    # Update every 50ms (same as the camera feed update rate)
-    window.after(50, update_magnetism)
+    # Update every 30ms (as per the original code)
+    window.after(30, update_magnetism)
 
 # Start the camera feed and magnetism measurement updates
 update_camera_feed()
