@@ -114,4 +114,16 @@ def capture_photo():
 
 
 # Create a larger button to capture the photo
-capture_button = tk.Button(window, text="Capture Photo", command=capture_photo
+capture_button = tk.Button(window, text="Capture Photo", command=capture_photo, height=3, width=20,
+                           font=("Helvetica", 14))
+capture_button.pack(pady=10)
+
+# Start the camera feed and magnetism measurement updates
+update_camera_feed()
+update_magnetism()
+
+# Run the GUI loop
+window.mainloop()
+
+# Stop the camera when the GUI is closed
+camera.close()
