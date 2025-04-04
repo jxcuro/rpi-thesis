@@ -1,10 +1,10 @@
 import spidev
 
-# Initialize SPI1 (SPI bus 1, device 0)
+# Initialize SPI (SPI bus 0, device 0)
 spi = spidev.SpiDev()
-spi.open(1, 0)  # SPI bus 1, device 0 (CE0)
+spi.open(0, 0)  # SPI bus 0, device 0 (CE0)
 
-# Set SPI speed and mode (adjust as needed)
+# Set SPI speed and mode
 spi.max_speed_hz = 50000
 spi.mode = 0
 
