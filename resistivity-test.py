@@ -5,6 +5,7 @@ import spidev
 LDC1101_FUNC_MODE_REG = 0x00
 LDC1101_L_DATA_LSB_REG = 0x23
 LDC1101_L_DATA_MSB_REG = 0x24
+LDC1101_STATUS_REG = 0x01
 
 # SPI setup
 spi = spidev.SpiDev()
@@ -26,14 +27,21 @@ def initialize_ldc1101():
     # Set FUNC_MODE register to 0x01 for Active mode (according to datasheet)
     write_register(LDC1101_FUNC_MODE_REG, 0x01)
     print("Setting LDC1101 to active mode...")
-    time.sleep(0.1)  # Wait for the device to stabilize
+    time.sleep(0.5)  # Wait for a longer time (500ms) to stabilize
+
+# Function to read the status register to verify if the device is in active mode
+def read_status():
+    status = read_register(LDC1101_STATUS_REG)  # Read status register
+    print(f"Status Register: {status:#04x}")  # Print status in hex format
 
 # Function to read the inductance value
 def read_inductance():
     # Read the lower and upper 8 bits of inductance data
     lsb = read_register(LDC1101_L_DATA_LSB_REG)
     msb = read_register(LDC1101_L_DATA_MSB_REG)
-    
+
+    print(f"LSB: {lsb}, MSB: {msb}")  # Print both LSB and MSB values
+
     # Combine the MSB and LSB to form the full inductance value (16-bit)
     inductance_value = (msb << 8) | lsb
     print(f"Inductance Data: {inductance_value}")
@@ -46,7 +54,8 @@ def read_inductance():
 # Main function to run the test
 def main():
     initialize_ldc1101()  # Initialize LDC1101 and set it to active mode
-    time.sleep(0.1)  # Wait a little before taking a reading
+    read_status()  # Check the status register after setting to active mode
+    time.sleep(0.5)  # Wait a little before taking a reading
     read_inductance()  # Read and print the inductance data
 
 # Run the test
