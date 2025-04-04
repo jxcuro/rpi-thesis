@@ -28,7 +28,7 @@ SENSITIVITY_V_PER_TESLA = 0.0004  # Voltage per Tesla (e.g., 0.0004 V/T for a ty
 SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
 
 # Idle voltage (baseline) for your Hall sensor
-IDLE_VOLTAGE = 1.05  # Adjust this based on your actual idle voltage reading
+IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
 
 
 # Function to capture and save the image with magnetism-based filename
