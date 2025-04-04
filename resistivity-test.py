@@ -6,23 +6,21 @@ import os
 import uuid
 import board
 import busio
-import spidev
-from datetime import datetime
 from adafruit_ads1x15.analog_in import AnalogIn
-from adafruit_ads1x15.ads1115 import ADS1115
-from math import pi
+from adafruit_ads1x15.ads1115 import ADS1115  # Corrected import for ADS1115
+from datetime import datetime
 
 # Initialize camera
 camera = Picamera2()
 camera.configure(camera.create_still_configuration())  # Use still configuration for faster capture
 camera.start()
 
-# Initialize I2C and ADS1115 for Hall sensor
+# Initialize I2C and ADS1115
 i2c = busio.I2C(board.SCL, board.SDA)
-ads = ADS.ADS1115(i2c)
+ads = ADS1115(i2c)  # Correct instantiation
 
 # Use A0 channel for Hall sensor
-hall_sensor = AnalogIn(ads, ADS.P0)
+hall_sensor = AnalogIn(ads, ADS1115.P0)  # Correct pin usage for A0 channel
 
 # Sensitivity factor for the Hall sensor (example for a typical sensor, adjust based on your sensor)
 SENSITIVITY_V_PER_TESLA = 0.0004  # Voltage per Tesla (e.g., 0.0004 V/T for a typical sensor)
@@ -31,28 +29,6 @@ SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
 
 # Idle voltage (baseline) for your Hall sensor
 IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
-
-# Initialize SPI for LDC1101
-spi = spidev.SpiDev()
-spi.open(0, 0)  # Bus 0, Device 0 (Pin 19, GPIO 10)
-spi.max_speed_hz = 50000  # Set the SPI clock speed
-
-# Function to read inductance from LDC1101
-def read_inductance():
-    # Send a command to the LDC1101 to get the measurement result (this is just an example)
-    # You might need to adjust the command depending on your specific LDC1101 setup
-    result = spi.xfer2([0x00, 0x00])  # Sending dummy data to read the sensor (Replace with correct command)
-    # Assuming LDC1101 sends back 2 bytes of data, combine them:
-    raw_value = (result[0] << 8) + result[1]
-    # Convert raw value to inductance (you will need the correct formula for your LDC1101)
-    inductance = raw_value * 0.01  # Example scaling factor (adjust based on your LDC1101 datasheet)
-    return inductance
-
-# Function to update inductance display on GUI
-def update_inductance():
-    inductance_value = read_inductance()
-    inductance_label.config(text=f"Inductance: {inductance_value:.2f} µH")
-    window.after(100, update_inductance)  # Update every 100ms for live readings
 
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
@@ -104,7 +80,7 @@ def capture_photo():
 
 # Create main window
 window = tk.Tk()
-window.title("Camera Feed with Magnetism and Inductance Measurement")
+window.title("Camera Feed with Magnetism Measurement")
 
 # Create a frame for organizing camera feed and controls
 frame = tk.Frame(window)
@@ -126,14 +102,10 @@ feedback_label.grid(row=0, column=0)
 magnetism_label = tk.Label(controls_frame, text="Magnetism: 0.00 mT", font=("Helvetica", 14))
 magnetism_label.grid(row=1, column=0)
 
-# Create label to display inductance value
-inductance_label = tk.Label(controls_frame, text="Inductance: 0.00 µH", font=("Helvetica", 14))
-inductance_label.grid(row=2, column=0)
-
 # Create a larger button to capture the photo
 capture_button = tk.Button(controls_frame, text="Capture Photo", command=capture_photo, height=3, width=20,
                            font=("Helvetica", 14))
-capture_button.grid(row=3, column=0, pady=10)
+capture_button.grid(row=2, column=0, pady=10)
 
 
 # Function to update the camera feed in the GUI
@@ -147,9 +119,31 @@ def update_camera_feed():
     window.after(60, update_camera_feed)  # Update every 60ms for better performance
 
 
-# Start the camera feed, magnetism, and inductance measurement updates
+# Function to update magnetism measurement with scaling and units switching
+def update_magnetism():
+    # Get the raw voltage from the Hall sensor
+    voltage = hall_sensor.voltage
+
+    # Subtract the idle voltage (baseline) to get the actual magnetic field
+    adjusted_voltage = voltage - IDLE_VOLTAGE
+
+    # Convert adjusted voltage to milliTesla (mT)
+    magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Using mT for scaling
+
+    # Check if the magnetism is below 1 mT, convert to microTesla (μT) if so
+    if abs(magnetism_mT) < 1:
+        magnetism_uT = magnetism_mT * 1000  # Convert mT to μT
+        magnetism_label.config(text=f"Magnetism: {magnetism_uT:.2f} μT")
+    else:
+        magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
+
+    # Update every 60ms for better performance
+    window.after(60, update_magnetism)
+
+
+# Start the camera feed and magnetism measurement updates
 update_camera_feed()
-update_inductance()
+update_magnetism()
 
 # Run the GUI loop
 window.mainloop()
