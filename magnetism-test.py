@@ -32,6 +32,14 @@ IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
 
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
+    # Disable the button to prevent multiple clicks
+    capture_button.config(state=tk.DISABLED)
+    
+    # Provide instant feedback to the user
+    feedback_label.config(text="Capturing photo...", fg="orange")
+    window.update()  # Ensure the UI updates immediately
+
+    # Capture the image and process the magnetism
     frame = camera.capture_array()  # Use capture_array to get the frame directly
     img = Image.fromarray(frame)
     img = img.resize((640, 480))  # Resize the image to match display size
@@ -63,9 +71,11 @@ def capture_photo():
     img.save(file_path)
     print(f"Image saved at {file_path}")
 
-    # Provide feedback to the user
+    # Provide feedback to the user once the image is saved
     feedback_label.config(text=f"Photo Captured: {file_name}", fg="green")
-    window.after(2000, lambda: feedback_label.config(text=""))
+
+    # Re-enable the button after a short delay (e.g., 2 seconds)
+    window.after(2000, lambda: capture_button.config(state=tk.NORMAL))
 
 # Create main window
 window = tk.Tk()
