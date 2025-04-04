@@ -12,7 +12,7 @@ from datetime import datetime
 
 # Initialize camera
 camera = Picamera2()
-camera.configure(camera.create_still_configuration())
+camera.configure(camera.create_still_configuration())  # Use still configuration for faster capture
 camera.start()
 
 # Initialize I2C and ADS1115
@@ -32,8 +32,8 @@ IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
 
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
-    frame = camera.capture_array()
-    img = Image.fromarray(frame)
+    frame = camera.capture()  # Use capture for faster performance
+    img = Image.open(frame)  # Load the captured image into PIL for manipulation
     img = img.resize((640, 480))  # Resize the image to match display size
 
     # Get magnetism value
@@ -88,13 +88,13 @@ capture_button.grid(row=2, column=0, pady=10)
 
 # Function to update the camera feed in the GUI
 def update_camera_feed():
-    frame = camera.capture_array()
-    img = Image.fromarray(frame)
-    img = img.resize((640, 480))  # Resize the image to a larger size
+    frame = camera.capture()  # Capture a single frame (avoid using capture_array())
+    img = Image.open(frame)  # Open the image captured from the camera
+    img = img.resize((640, 480))  # Resize to fit the screen
     img_tk = ImageTk.PhotoImage(img)
     camera_label.img_tk = img_tk
     camera_label.configure(image=img_tk)
-    window.after(30, update_camera_feed)
+    window.after(60, update_camera_feed)  # Update every 60ms instead of 30ms for better performance
 
 # Function to update magnetism measurement with scaling and units switching
 def update_magnetism():
@@ -114,8 +114,8 @@ def update_magnetism():
     else:
         magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
 
-    # Update every 30ms (same as the camera feed)
-    window.after(30, update_magnetism)
+    # Update every 60ms instead of 30ms
+    window.after(60, update_magnetism)
 
 # Start the camera feed and magnetism measurement updates
 update_camera_feed()
