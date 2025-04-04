@@ -69,12 +69,16 @@ def update_magnetism():
     # Convert adjusted voltage to milliTesla (mT)
     magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Using mT for scaling
 
+    # Calculate the raw (uncalibrated) magnetism
+    raw_magnetism_mT = voltage / SENSITIVITY_V_PER_MILLITESLA
+
     # Check if the magnetism is below 1 mT, convert to microTesla (μT) if so
     if abs(magnetism_mT) < 1:
         magnetism_uT = magnetism_mT * 1000  # Convert mT to μT
-        magnetism_label.config(text=f"Magnetism: {magnetism_uT:.2f} μT")
+        raw_magnetism_uT = raw_magnetism_mT * 1000  # Convert raw mT to μT if needed
+        magnetism_label.config(text=f"Magnetism: {magnetism_uT:.2f} μT ({raw_magnetism_uT:.2f} μT)")
     else:
-        magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
+        magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT ({raw_magnetism_mT:.2f} mT)")
 
     # Update every 30ms (same as the camera feed)
     window.after(30, update_magnetism)
@@ -110,16 +114,4 @@ def capture_photo():
 
 
 # Create a larger button to capture the photo
-capture_button = tk.Button(window, text="Capture Photo", command=capture_photo, height=3, width=20,
-                           font=("Helvetica", 14))
-capture_button.pack(pady=10)
-
-# Start the camera feed and magnetism measurement updates
-update_camera_feed()
-update_magnetism()
-
-# Run the GUI loop
-window.mainloop()
-
-# Stop the camera when the GUI is closed
-camera.close()
+capture_button = tk.Button(window, text="Capture Photo", command=capture_photo
