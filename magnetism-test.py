@@ -34,29 +34,39 @@ IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
 window = tk.Tk()
 window.title("Camera Feed with Magnetism Measurement")
 
+# Create a frame for organizing camera feed and controls
+frame = tk.Frame(window)
+frame.pack(padx=10, pady=10, fill='both', expand=True)
+
 # Create label for displaying the camera feed
-camera_label = tk.Label(window)
-camera_label.pack(padx=10, pady=10)
+camera_label = tk.Label(frame)
+camera_label.grid(row=0, column=0, padx=10, pady=10, rowspan=5)
+
+# Create a frame for controls (text and button)
+controls_frame = tk.Frame(frame)
+controls_frame.grid(row=0, column=1, padx=10, pady=10, sticky='n')
 
 # Create label to show feedback when a photo is captured
-feedback_label = tk.Label(window, text="", fg="green", font=("Helvetica", 14))
-feedback_label.pack()
+feedback_label = tk.Label(controls_frame, text="", fg="green", font=("Helvetica", 14))
+feedback_label.grid(row=0, column=0)
 
 # Create label to display magnetism value
-magnetism_label = tk.Label(window, text="Magnetism: 0.00 mT", font=("Helvetica", 14))
-magnetism_label.pack()
+magnetism_label = tk.Label(controls_frame, text="Magnetism: 0.00 mT", font=("Helvetica", 14))
+magnetism_label.grid(row=1, column=0)
 
+# Create a larger button to capture the photo
+capture_button = tk.Button(controls_frame, text="Capture Photo", command=capture_photo, height=3, width=20, font=("Helvetica", 14))
+capture_button.grid(row=2, column=0, pady=10)
 
 # Function to update the camera feed in the GUI
 def update_camera_feed():
     frame = camera.capture_array()
     img = Image.fromarray(frame)
-    img = img.resize((224, 224))
+    img = img.resize((640, 480))  # Resize the image to a larger size
     img_tk = ImageTk.PhotoImage(img)
     camera_label.img_tk = img_tk
     camera_label.configure(image=img_tk)
     window.after(30, update_camera_feed)
-
 
 # Function to update magnetism measurement with scaling and units switching
 def update_magnetism():
@@ -69,26 +79,21 @@ def update_magnetism():
     # Convert adjusted voltage to milliTesla (mT)
     magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Using mT for scaling
 
-    # Calculate the raw (uncalibrated) magnetism
-    raw_magnetism_mT = voltage / SENSITIVITY_V_PER_MILLITESLA
-
     # Check if the magnetism is below 1 mT, convert to microTesla (μT) if so
     if abs(magnetism_mT) < 1:
         magnetism_uT = magnetism_mT * 1000  # Convert mT to μT
-        raw_magnetism_uT = raw_magnetism_mT * 1000  # Convert raw mT to μT if needed
-        magnetism_label.config(text=f"Magnetism: {magnetism_uT:.2f} μT ({raw_magnetism_uT:.2f} μT)")
+        magnetism_label.config(text=f"Magnetism: {magnetism_uT:.2f} μT")
     else:
-        magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT ({raw_magnetism_mT:.2f} mT)")
+        magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
 
     # Update every 30ms (same as the camera feed)
     window.after(30, update_magnetism)
-
 
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
     frame = camera.capture_array()
     img = Image.fromarray(frame)
-    img = img.resize((224, 224))
+    img = img.resize((640, 480))  # Resize the image to match display size
 
     # Get magnetism value
     voltage = hall_sensor.voltage
@@ -111,12 +116,6 @@ def capture_photo():
     # Provide feedback to the user
     feedback_label.config(text=f"Photo Captured: {file_name}", fg="green")
     window.after(2000, lambda: feedback_label.config(text=""))
-
-
-# Create a larger button to capture the photo
-capture_button = tk.Button(window, text="Capture Photo", command=capture_photo, height=3, width=20,
-                           font=("Helvetica", 14))
-capture_button.pack(pady=10)
 
 # Start the camera feed and magnetism measurement updates
 update_camera_feed()
