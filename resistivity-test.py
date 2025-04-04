@@ -1,5 +1,6 @@
 import time
 import spidev
+import RPi.GPIO as GPIO
 
 # Define LDC1101 register addresses
 LDC1101_FUNC_MODE_REG = 0x00
@@ -7,20 +8,33 @@ LDC1101_L_DATA_LSB_REG = 0x23
 LDC1101_L_DATA_MSB_REG = 0x24
 LDC1101_STATUS_REG = 0x01
 
+# Set up GPIO for Chip Select (CS) pin
+CS_PIN = 24  # Assuming GPIO 24 is used for CS
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(CS_PIN, GPIO.OUT, initial=GPIO.HIGH)
+
 # SPI setup
 spi = spidev.SpiDev()
 spi.open(0, 0)  # Bus 0, Device 0 (check your wiring to ensure correct SPI bus and device)
-spi.max_speed_hz = 50000  # Set the SPI speed (adjust as needed)
+spi.max_speed_hz = 10000  # Set a lower SPI speed (e.g., 10kHz)
 spi.mode = 0b00  # SPI Mode 0 (CPOL=0, CPHA=0)
 
 # Function to write to a register
 def write_register(register, value):
+    toggle_cs(CS_PIN)  # Toggle CS before each write
     spi.xfer2([register & 0xFF, value & 0xFF])
 
 # Function to read from a register
 def read_register(register):
+    toggle_cs(CS_PIN)  # Toggle CS before each read
     response = spi.xfer2([register & 0xFF, 0x00])  # Send register address with dummy data (0x00)
     return response[1]  # The response data is in the second byte
+
+# Function to toggle Chip Select (CS) pin
+def toggle_cs(pin):
+    GPIO.output(pin, GPIO.LOW)  # Set CS low
+    time.sleep(0.01)  # Short delay for SPI communication
+    GPIO.output(pin, GPIO.HIGH)  # Set CS high to deselect the device
 
 # Function to initialize the LDC1101 and set it to active mode
 def initialize_ldc1101():
