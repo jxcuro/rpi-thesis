@@ -6,10 +6,9 @@ import os
 import uuid
 import board
 import busio
-import adafruit_ads1x15.ads1115 as ADS
+import spidev
 from adafruit_ads1x15.analog_in import AnalogIn
 from datetime import datetime
-import spidev
 
 # Initialize camera
 camera = Picamera2()
@@ -31,17 +30,23 @@ SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
 # Idle voltage (baseline) for your Hall sensor
 IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
 
-# Initialize SPI for LDC1101 resistivity sensor
+# SPI setup for LDC1101
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Open SPI bus 0, device 0 (adjust this if necessary)
-spi.max_speed_hz = 50000  # Set SPI speed (adjust as needed)
+spi.open(0, 0)  # Bus 0, CS 0 (GPIO 5 for CS)
+spi.max_speed_hz = 50000
+spi.mode = 0b01  # Mode 1 (CPOL = 0, CPHA = 1)
 
-# Function to read data from LDC1101
+# Function to read resistivity value from LDC1101
 def read_resistivity():
-    # Send command to read resistivity (registers and commands are based on LDC1101 datasheet)
-    # Note: Refer to the LDC1101 datasheet for actual command sequences and register configuration
-    adc_result = spi.xfer2([0x30, 0x00])  # Replace with the actual LDC1101 command for resistivity
-    resistivity = (adc_result[0] << 8) | adc_result[1]  # Combine high and low byte
+    # Send command to start the conversion (you may need to adjust this based on the LDC1101 datasheet)
+    # Send a dummy byte to read the resistivity data
+    response = spi.xfer2([0x00, 0x00])  # Send dummy bytes to receive data
+
+    # Combine the response bytes to form a 16-bit resistivity value
+    resistivity_raw = (response[0] << 8) | response[1]
+
+    # Calculate resistivity based on raw data (you may need to adjust this based on your sensor's datasheet)
+    resistivity = resistivity_raw * 0.01  # Example scaling factor, adjust according to datasheet
     return resistivity
 
 # Function to capture and save the image with magnetism-based filename
@@ -91,6 +96,7 @@ def capture_photo():
     # Re-enable the button after a short delay (e.g., 2 seconds)
     window.after(2000, lambda: capture_button.config(state=tk.NORMAL))
 
+
 # Create main window
 window = tk.Tk()
 window.title("Camera Feed with Magnetism and Resistivity Measurement")
@@ -116,13 +122,14 @@ magnetism_label = tk.Label(controls_frame, text="Magnetism: 0.00 mT", font=("Hel
 magnetism_label.grid(row=1, column=0)
 
 # Create label to display resistivity value
-resistivity_label = tk.Label(controls_frame, text="Resistivity: 0.00", font=("Helvetica", 14))
+resistivity_label = tk.Label(controls_frame, text="Resistivity: 0.00 Ω", font=("Helvetica", 14))
 resistivity_label.grid(row=2, column=0)
 
 # Create a larger button to capture the photo
 capture_button = tk.Button(controls_frame, text="Capture Photo", command=capture_photo, height=3, width=20,
                            font=("Helvetica", 14))
 capture_button.grid(row=3, column=0, pady=10)
+
 
 # Function to update the camera feed in the GUI
 def update_camera_feed():
@@ -133,6 +140,7 @@ def update_camera_feed():
     camera_label.img_tk = img_tk
     camera_label.configure(image=img_tk)
     window.after(60, update_camera_feed)  # Update every 60ms for better performance
+
 
 # Function to update magnetism measurement with scaling and units switching
 def update_magnetism():
@@ -155,13 +163,15 @@ def update_magnetism():
     # Update every 60ms for better performance
     window.after(60, update_magnetism)
 
-# Function to update resistivity value in the GUI
-def update_resistivity():
-    resistivity_value = read_resistivity()
-    resistivity_label.config(text=f"Resistivity: {resistivity_value:.2f}")
-    window.after(60, update_resistivity)  # Update every 60ms for better performance
 
-# Start the camera feed, magnetism updates, and resistivity updates
+# Function to update resistivity on the GUI
+def update_resistivity():
+    resistivity = read_resistivity()  # Get the resistivity value
+    resistivity_label.config(text=f"Resistivity: {resistivity:.2f} Ω")  # Update the label
+    window.after(1000, update_resistivity)  # Update every second
+
+
+# Start the camera feed and magnetism measurement updates
 update_camera_feed()
 update_magnetism()
 update_resistivity()
@@ -171,4 +181,3 @@ window.mainloop()
 
 # Stop the camera when the GUI is closed
 camera.close()
-spi.close()  # Close SPI connection when done
