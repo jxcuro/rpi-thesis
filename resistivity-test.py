@@ -74,6 +74,7 @@ def set_active_mode():
     if func_mode != 0x01:
         print("Setting LDC1101 to active mode.")
         write_register(LDC1101_FUNC_MODE, 0x01)  # Set to active mode
+        time.sleep(0.05)  # Wait for the device to transition into active mode
     else:
         print("LDC1101 is already in active mode.")
 
