@@ -6,28 +6,33 @@ import os
 import uuid
 import board
 import busio
-from adafruit_ads1x15.ads1115 import ADS1115
+import adafruit_ads1x15.ads1115 as ADS
 from adafruit_ads1x15.analog_in import AnalogIn
 from datetime import datetime
+from microchip_ldc1101 import LDC1101  # Assuming you have the LDC1101 library for Raspberry Pi
 
 # Initialize camera
 camera = Picamera2()
 camera.configure(camera.create_still_configuration())  # Use still configuration for faster capture
 camera.start()
 
-# Initialize I2C for both LDC1101 and ADS1115
-i2c = busio.I2C(board.SCL, board.SDA)  # Initialize the I2C bus
-ads = ADS1115(i2c)  # Initialize ADS1115 using the I2C bus
+# Initialize I2C and ADS1115
+i2c = busio.I2C(board.SCL, board.SDA)
+ads = ADS.ADS1115(i2c)
 
-# Create AnalogIn instance for Hall sensor (connected to A0 channel)
-hall_sensor = AnalogIn(ads, ADS1115.P0)
+# Use A0 channel for Hall sensor
+hall_sensor = AnalogIn(ads, ADS.P0)
 
-# Sensitivity factor for Hall sensor
-SENSITIVITY_V_PER_TESLA = 0.0004  # Adjust as needed for your sensor
-IDLE_VOLTAGE = 1.7  # Adjust based on your sensor's idle voltage
+# Sensitivity factor for the Hall sensor (example for a typical sensor, adjust based on your sensor)
+SENSITIVITY_V_PER_TESLA = 0.0004  # Voltage per Tesla (e.g., 0.0004 V/T for a typical sensor)
+# Convert the reading to milliTesla (mT)
+SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000  # 1 T = 1000 mT
 
-# Sensitivity factor for LDC1101 (resistivity measurement)
-SENSITIVITY_RESISTIVITY = 1  # Adjust based on LDC1101 resistivity calculations
+# Idle voltage (baseline) for your Hall sensor
+IDLE_VOLTAGE = 1.7  # Adjust this based on your actual idle voltage reading
+
+# Initialize LDC1101 (using your custom wiring pins for the LDC1101)
+ldc = LDC1101(i2c, cs_pin=5)  # You need to ensure this works with your pin configuration
 
 # Function to capture and save the image with magnetism-based filename
 def capture_photo():
@@ -46,7 +51,7 @@ def capture_photo():
     # Get magnetism value
     voltage = hall_sensor.voltage
     adjusted_voltage = voltage - IDLE_VOLTAGE  # Subtract idle voltage to get actual value
-    magnetism_mT = adjusted_voltage / (SENSITIVITY_V_PER_TESLA * 1000)  # Convert to mT
+    magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Convert to mT
 
     # Determine the correct unit (mT or μT)
     if abs(magnetism_mT) < 1:  # If magnetism is less than 1 mT, use microTesla
@@ -77,29 +82,16 @@ def capture_photo():
     window.after(2000, lambda: capture_button.config(state=tk.NORMAL))
 
 
-# Function to get magnetism in milliTesla (mT) or microTesla (uT)
-def get_magnetism():
-    voltage = hall_sensor.voltage  # Directly use the voltage from the hall sensor
-    adjusted_voltage = voltage - IDLE_VOLTAGE
-    magnetism_mT = adjusted_voltage / (SENSITIVITY_V_PER_TESLA * 1000)  # Convert to milliTesla (mT)
-    
-    # Display magnetism in appropriate unit
-    if abs(magnetism_mT) < 1:
-        magnetism_uT = magnetism_mT * 1000  # Convert to microTesla (μT)
-        magnetism_label.config(text=f"Magnetism: {magnetism_uT:.2f} μT")
-    else:
-        magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
+# Function to read the LDC1101 for resistivity measurement
+def read_resistivity():
+    # Read inductance value from the LDC1101
+    inductance_value = ldc.read_inductance()
 
+    # Convert the inductance value into resistivity (This is a simplified approach)
+    resistivity = inductance_value * 1000  # Example conversion factor; adjust for your setup
+    return resistivity
 
-# Function to measure resistivity (adjust based on your LDC1101 implementation)
-def get_resistivity():
-    # LDC1101 specific resistivity reading logic (replace with actual LDC1101 readings)
-    resistivity_value = 100  # Example static value; replace with actual reading
-    resistivity_label.config(text=f"Resistivity: {resistivity_value:.2f} Ω")
-    return resistivity_value
-
-
-# Function to update camera feed in the GUI
+# Function to update the camera feed in the GUI
 def update_camera_feed():
     frame = camera.capture_array()  # Capture a single frame
     img = Image.fromarray(frame)  # Open the captured image
@@ -110,11 +102,30 @@ def update_camera_feed():
     window.after(60, update_camera_feed)  # Update every 60ms for better performance
 
 
-# Function to update magnetism and resistivity measurements
-def update_measurements():
-    get_magnetism()
-    get_resistivity()
-    window.after(60, update_measurements)  # Update every 60ms
+# Function to update magnetism measurement with scaling and units switching
+def update_magnetism():
+    # Get the raw voltage from the Hall sensor
+    voltage = hall_sensor.voltage
+
+    # Subtract the idle voltage (baseline) to get the actual magnetic field
+    adjusted_voltage = voltage - IDLE_VOLTAGE
+
+    # Convert adjusted voltage to milliTesla (mT)
+    magnetism_mT = adjusted_voltage / SENSITIVITY_V_PER_MILLITESLA  # Using mT for scaling
+
+    # Check if the magnetism is below 1 mT, convert to microTesla (μT) if so
+    if abs(magnetism_mT) < 1:
+        magnetism_uT = magnetism_mT * 1000  # Convert mT to μT
+        magnetism_label.config(text=f"Magnetism: {magnetism_uT:.2f} μT")
+    else:
+        magnetism_label.config(text=f"Magnetism: {magnetism_mT:.2f} mT")
+
+    # Update the resistivity measurement
+    resistivity_value = read_resistivity()
+    resistivity_label.config(text=f"Resistivity: {resistivity_value:.2f} Ω")  # Display resistivity value
+
+    # Update every 60ms for better performance
+    window.after(60, update_magnetism)
 
 
 # Create main window
@@ -151,9 +162,9 @@ capture_button = tk.Button(controls_frame, text="Capture Photo", command=capture
 capture_button.grid(row=3, column=0, pady=10)
 
 
-# Start the camera feed, magnetism, and resistivity updates
+# Start the camera feed and magnetism measurement updates
 update_camera_feed()
-update_measurements()
+update_magnetism()
 
 # Run the GUI loop
 window.mainloop()
