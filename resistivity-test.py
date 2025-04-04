@@ -5,17 +5,19 @@ import time
 spi = spidev.SpiDev()
 spi.open(0, 0)  # SPI bus 0, device 0 (CE0)
 
-# Set SPI parameters
-spi.max_speed_hz = 1000000    # Set speed to 500kHz
-spi.mode = 0  # Try mode 0 (CPOL = 0, CPHA = 0)
+# Try different SPI settings
+modes = [0, 1, 2, 3]
+speeds = [500000, 1000000, 2000000]  # Experiment with different speeds
 
-# Send a byte (e.g., 0x01) and receive the response
-response = spi.xfer([0x01])
-print("Loopback Response:", response)  # You should see the same byte sent (0x01)
-
-# Send and receive multiple bytes (you can try different bytes here)
-response = spi.xfer([0x01, 0x02])  # Send two bytes
-print("Loopback Response (multiple bytes):", response)
+for mode in modes:
+    for speed in speeds:
+        print(f"Testing mode {mode} and speed {speed}Hz")
+        spi.mode = mode
+        spi.max_speed_hz = speed
+        
+        # Send and receive data
+        response = spi.xfer([0x01, 0x02])  # Send two bytes
+        print(f"Response with mode {mode} and speed {speed}: {response}")
 
 # Close SPI after use
 spi.close()
