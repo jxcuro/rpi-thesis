@@ -20,10 +20,14 @@ def read_register(register):
     response = spi.xfer2([register | 0x80, 0x00])  # 0x80 enables read
     return response[1]
 
-# Read the Fault Detection Register (example: 0x04, check your datasheet)
-fault_value = read_register(0x04)  # Replace with actual fault register address
+# Read the Inductance Data Registers
+l_data_lsb = read_register(0x23)  # L_DATA_LSB (low byte)
+l_data_msb = read_register(0x24)  # L_DATA_MSB (high byte)
 
-print(f"Fault Detection Register (0x04) Value: 0x{fault_value:02X}")
+# Combine the two bytes to get the full inductance value
+inductance_value = (l_data_msb << 8) | l_data_lsb
+
+print(f"Inductance Value: {inductance_value}")
 
 # Close SPI connection
 spi.close()
