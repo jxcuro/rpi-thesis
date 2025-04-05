@@ -26,16 +26,16 @@ def write_register(register, value):
     response = spi.xfer2([register & 0x7F, value])  # 0x7F disables read operation
     print(f"Writing to 0x{register:02X}: 0x{value:02X}, Response: 0x{response[1]:02X}")
 
-# Step 1: Delay after power-up to allow initialization (0.8 ms)
-time.sleep(0.001)  # Wait for 1 ms to ensure proper initialization
+# Step 1: Wait for 1 ms after power-up to allow initialization (0.8 ms)
+time.sleep(0.001)  # 1 ms
 
 # Step 2: Write to START_CONFIG (0x0B) to set it to active mode (0x01)
 write_register(0x0B, 0x01)  # Active Mode (0x01)
-time.sleep(0.02)  # Increased delay to 20 ms to give sensor more time
+time.sleep(0.02)  # Increased delay to 20 ms to ensure proper wake-up
 
 # Step 3: Write to DIG_CONFIG (0x04) to configure RP+L conversion interval
 write_register(0x04, 0x03)  # RP+L conversion interval setting
-time.sleep(0.01)  # Give time for the configuration to take effect
+time.sleep(0.01)  # Allow enough time for this setting to take effect
 
 # Step 4: Write to RP_SET (0x01) to configure measurement dynamic range
 write_register(0x01, 0x07)  # Example setting for RP_SET
