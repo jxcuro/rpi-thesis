@@ -3,9 +3,9 @@ import time
 
 # SPI setup
 spi = spidev.SpiDev()
-spi.open(0, 0)  # SPI bus 0, CS0 (use 0,1 if on CE1)
+spi.open(0, 0)  # SPI bus 0, device 0 (CS0)
 spi.max_speed_hz = 1000000
-spi.mode = 1  # SPI mode 1 (CPOL=0, CPHA=1)
+spi.mode = 1  # SPI mode 1: CPOL=0, CPHA=1
 
 # Register addresses
 RP_MSB_REG      = 0x20
@@ -23,11 +23,11 @@ def write_register(reg, value):
 def read_register(reg):
     return spi.xfer2([reg | 0x80, 0x00])[1]  # MSB = 1 for read
 
-# Sensor initialization (mimics ldc1101_default_cfg)
+# Sensor initialization
 def ldc1101_init():
-    write_register(MODE_CONFIG_REG, 0x0C)  # Set to RP + L mode
-    write_register(POWER_CONFIG, 0x01)     # Set to Active Conversion mode
-    time.sleep(0.1)  # Allow sensor to stabilize
+    write_register(MODE_CONFIG_REG, 0x0C)  # RP + L mode
+    write_register(POWER_CONFIG, 0x01)     # Active conversion
+    time.sleep(0.1)
 
 # Read RP data (16-bit)
 def read_rp_data():
@@ -41,9 +41,17 @@ def read_l_data():
     lsb = read_register(L_LSB_REG)
     return (msb << 8) | lsb
 
-# Wait until data is ready
+# Wait for DATA_READY, with status print
 def wait_for_data_ready():
-    while not (read_register(STATUS_REG) & 0x01):  # Check DATA_READY bit
+    timeout = time.time() + 1  # 1 second timeout
+    while True:
+        status = read_register(STATUS_REG)
+        print(f"STATUS: 0x{status:02X}")  # Debug output
+        if status & 0x01:
+            break
+        if time.time() > timeout:
+            print("Timeout waiting for DATA_READY")
+            break
         time.sleep(0.005)
 
 # Main loop
