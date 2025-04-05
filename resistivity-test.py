@@ -1,56 +1,54 @@
-#include "ldc1101.h"
+import time
+import spidev
 
-// Function to initialize LDC1101 and configure it for LHR mode
-void ldc1101_init_and_configure_lhr(ldc1101_t *ctx, ldc1101_cfg_t *cfg) {
-    // Initialize the LDC1101
-    if (ldc1101_init(ctx, cfg) != LDC1101_OK) {
-        printf("Error initializing LDC1101\n");
-        return;
-    }
-    
-    // Configure default settings
-    ldc1101_default_cfg(ctx);
-    
-    // Activate LHR mode
-    ldc1101_go_to_l_mode(ctx);
-    
-    // Set the device to active conversion mode
-    ldc1101_set_power_mode(ctx, LDC1101_FUNC_MODE_ACTIVE_CONVERSION_MODE);
-    
-    printf("LDC1101 configured for LHR mode\n");
-}
+# Constants for LDC1101 Register Addresses and Configuration
+LDC1101_REG_CFG_LHR = 0x00   # Replace with the correct register address for LHR configuration
+LDC1101_REG_L_DATA_MSB = 0x01  # Replace with actual register address for L data MSB
+LDC1101_REG_L_DATA_LSB = 0x02  # Replace with actual register address for L data LSB
+LDC1101_FUNC_MODE_ACTIVE_CONVERSION_MODE = 0x01  # Example value
+LDC1101_FUNC_MODE_SLEEP_MODE = 0x00  # Example value
 
-// Function to retrieve L data from LDC1101
-uint16_t ldc1101_get_l_data_value(ldc1101_t *ctx) {
-    // Retrieve L data
-    uint16_t l_data = ldc1101_get_l_data(ctx);
-    
-    // Print the L data value
-    printf("L data value: %d\n", l_data);
-    
-    return l_data;
-}
+# Initialize SPI
+spi = spidev.SpiDev()
+spi.open(0, 0)  # Open SPI device 0, CS 0
+spi.max_speed_hz = 50000
+spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
 
-int main(void) {
-    ldc1101_t ldc1101;
-    ldc1101_cfg_t ldc1101_cfg;
+# Function to write to a register on the LDC1101
+def write_register(register, value):
+    data = [register, value]
+    spi.xfer2(data)
 
-    // Setup communication pins
-    ldc1101_cfg_setup(&ldc1101_cfg);
+# Function to read from a register on the LDC1101
+def read_register(register):
+    data = [register | 0x80, 0x00]  # Read operation: setting the MSB of the register address
+    response = spi.xfer2(data)
+    return response[1]  # Return the read value
 
-    // Initialize and configure LDC1101 for LHR mode
-    ldc1101_init_and_configure_lhr(&ldc1101, &ldc1101_cfg);
+# Initialize LDC1101 for LHR Mode
+def initialize_ldc1101():
+    # Set up LHR mode (replace with appropriate register settings)
+    write_register(LDC1101_REG_CFG_LHR, 0x01)  # Example value for LHR mode
+    time.sleep(0.1)  # Wait for configuration to take effect
 
-    // Give some time for the measurement to complete
-    // You might need to add a delay here if required
-    sleep(1); // Adjust as needed
+    # Set the sensor to active conversion mode
+    write_register(LDC1101_REG_CFG_LHR, LDC1101_FUNC_MODE_ACTIVE_CONVERSION_MODE)
+    time.sleep(0.1)
 
-    // Retrieve L data
-    uint16_t l_data = ldc1101_get_l_data_value(&ldc1101);
-    
-    if (l_data == 0) {
-        printf("Error: Received 0 L data, check the configuration.\n");
-    }
-    
-    return 0;
-}
+# Get L Data from LDC1101
+def get_l_data():
+    msb = read_register(LDC1101_REG_L_DATA_MSB)
+    lsb = read_register(LDC1101_REG_L_DATA_LSB)
+    l_data = (msb << 8) | lsb  # Combine MSB and LSB to get 16-bit data
+    return l_data
+
+# Main Function
+def main():
+    initialize_ldc1101()
+    while True:
+        l_data = get_l_data()
+        print(f"L Data: {l_data}")
+        time.sleep(1)  # Wait before reading again
+
+if __name__ == "__main__":
+    main()
