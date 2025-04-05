@@ -15,26 +15,19 @@ spi.max_speed_hz = SPI_SPEED
 spi.mode = SPI_MODE
 spi.bits_per_word = SPI_BITS
 
-# Function to write to a register
-def write_register(register, value):
-    spi.xfer2([register & 0x7F, value])  # Write to register (MSB 0 for write)
-    time.sleep(0.1)  # Add a small delay to allow the LDC1101 to process the write
-
 # Function to read data from LDC1101 register
 def read_register(register):
     response = spi.xfer2([register | 0x80, 0x00])  # 0x80 enables read
     return response[1]
 
-# Initialize LDC1101 (write values to necessary registers)
-write_register(0x02, 0x01)  # Example: Write to register 0x02 (LDC configuration)
-write_register(0x03, 0x02)  # Example: Write to register 0x03 (Channel data)
+# Read the Status Register (0x01)
+status_value = read_register(0x01)
 
-# Debug: Read all registers (only valid ones based on datasheet)
-registers = [0x01, 0x02, 0x03]  # Replace with actual valid registers for LDC1101
-print("LDC1101 Register Debugging with Correct Register Addresses:")
-for reg in registers:
-    reg_value = read_register(reg)
-    print(f"Register 0x{reg:02X} Value: 0x{reg_value:02X}")
+# Check for error flags or status bits
+error_flags = status_value & 0x03  # Example: Check the lower 2 bits for error flags (adjust if needed)
+
+print(f"Status Register (0x01) Value: 0x{status_value:02X}")
+print(f"Error Flags (lower 2 bits): 0x{error_flags:02X}")
 
 # Close SPI connection
 spi.close()
