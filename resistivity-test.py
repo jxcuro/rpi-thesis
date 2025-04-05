@@ -80,23 +80,31 @@ def ldc1101_init():
     time.sleep(0.1)
     return "DEVICE_OK"
 
-# Function to set the power mode
-def ldc1101_set_power_mode(mode):
-    ldc1101_write_byte(LDC1101_REG_CFG_POWER_STATE, mode)
+# Function to set the LHR mode
+def ldc1101_set_LHR_mode():
+    ldc1101_write_byte(LDC1101_REG_CFG_LHR, 0x80)  # Set LHR mode (0x80 for LHR mode)
+    time.sleep(0.1)
 
-# Function to go to L mode
-def ldc1101_go_to_L_mode():
-    ldc1101_write_byte(LDC1101_REG_CFG_ADDITIONAL_DEVICE, 0x01)
-    ldc1101_write_byte(LDC1101_REG_AMPLITUDE_CONTROL_REQUIREMENT, 0x01)
-
-# Function to go to RP mode
-def ldc1101_go_to_RP_mode():
-    ldc1101_write_byte(LDC1101_REG_CFG_ADDITIONAL_DEVICE, 0x00)
-    ldc1101_write_byte(LDC1101_REG_AMPLITUDE_CONTROL_REQUIREMENT, 0x00)
+# Function to read inductance data in LHR mode
+def ldc1101_read_inductance_LHR():
+    # Ensure LHR mode is enabled
+    ldc1101_set_LHR_mode()
+    
+    # Read the LHR data registers
+    lhr_data_lsb = ldc1101_read_byte(LDC1101_REG_LHR_DATA_LSB)
+    lhr_data_mid = ldc1101_read_byte(LDC1101_REG_LHR_DATA_MID)
+    lhr_data_msb = ldc1101_read_byte(LDC1101_REG_LHR_DATA_MSB)
+    
+    # Combine the bytes into the inductance value
+    inductance_value = (lhr_data_msb << 16) | (lhr_data_mid << 8) | lhr_data_lsb
+    
+    # Return the inductance value
+    return inductance_value
 
 # Example Usage
 init_status = ldc1101_init()
 print(f"Initialization Status: {init_status}")
-ldc1101_go_to_L_mode()
-time.sleep(1)
-ldc1101_go_to_RP_mode()
+
+# Read inductance value in LHR mode
+inductance_value = ldc1101_read_inductance_LHR()
+print(f"Inductance Value (in LHR mode): {inductance_value}")
