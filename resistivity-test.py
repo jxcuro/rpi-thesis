@@ -15,27 +15,28 @@ spi.max_speed_hz = SPI_SPEED
 spi.mode = SPI_MODE
 spi.bits_per_word = SPI_BITS
 
-# Function to write data to LDC1101 register
-def write_register(register, value):
-    spi.xfer2([register, value])
-
 # Function to read data from LDC1101 register
 def read_register(register):
     response = spi.xfer2([register | 0x80, 0x00])  # 0x80 enables read
     return response[1]
 
-# Step 1: Set D_CONF to a higher value (e.g., 0x01) to increase amplitude sensitivity
-write_register(0x0C, 0x01)  # Adjust as necessary (try 0x02 for higher sensitivity)
+# Step 1: Delay after power-up to allow initialization (0.8 ms)
+time.sleep(0.001)  # Wait for 1 ms to ensure proper initialization
 
-# Step 2: Wait for 100 ms to allow the system to perform measurement
-time.sleep(0.1)  # Increase delay as needed
+# Step 2: Read and print the values of all registers
+all_registers = [
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x0B, 0x0C, 
+    0x34, 0x30, 0x31, 0x32, 0x33, 0x3B, 0x38, 
+    0x39, 0x3A, 0x0A, 0x16, 0x17, 0x18, 0x19, 
+    0x20, 0x21, 0x22, 0x23, 0x24, 0x05, 0x0A, 0x0F, 
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15
+]
 
-# Step 3: Read and print LHR-related registers again to see if data changes
-registers_to_check = [0x30, 0x31, 0x32, 0x33, 0x38, 0x39, 0x3A, 0x3B]
-print("Reading LHR-related registers again after adjustment...")
-for reg in registers_to_check:
+print("Reading all registers...")
+
+for reg in all_registers:
     value = read_register(reg)
     print(f"Register 0x{reg:02X}: 0x{value:02X}")
 
-# Step 4: Close SPI connection
+# Step 3: Close SPI connection
 spi.close()
