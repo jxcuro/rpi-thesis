@@ -1,4 +1,5 @@
 import spidev
+import time
 
 # Define SPI parameters
 SPI_BUS = 0
@@ -23,13 +24,19 @@ def read_register(register):
 def write_register(register, value):
     spi.xfer2([register & 0x7F, value])  # 0x7F disables write operation
 
-# Modify the DIG_CONFIG register (0x04) to set the measurement interval if necessary
-write_register(0x04, 0x03)  # Example: Set RP+L conversion interval (you may adjust as needed)
+# Force the LDC1101 into active mode by setting START_CONFIG (0x0B)
+write_register(0x0B, 0x01)  # Set to Active Mode (0x01)
 
-# Read the DIG_CONFIG register to confirm the change
+# Wait a bit for the sensor to switch modes
+time.sleep(1)
+
+# Read and verify the START_CONFIG register value
+start_config_value = read_register(0x0B)
+print(f"START_CONFIG (0x0B) Register Value: 0x{start_config_value:02X}")
+
+# Check the DIG_CONFIG register to ensure it's not still at 0x00
 dig_config_value = read_register(0x04)
-
-print(f"DIG_CONFIG (0x04) Register Value: 0x{dig_config_value:02X}")
+print(f"DIG_CONFIG (0x04) Register Value after forcing active mode: 0x{dig_config_value:02X}")
 
 # Close SPI connection
 spi.close()
