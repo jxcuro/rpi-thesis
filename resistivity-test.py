@@ -29,28 +29,15 @@ def write_register(register, value):
 # Step 1: Delay after power-up to allow initialization (0.8 ms)
 time.sleep(0.001)  # Wait for 1 ms to ensure proper initialization
 
-# Step 2: Set to Active Mode (0x00) for LHR measurement
-write_register(0x0B, 0x00)  # Start conversion in active mode
-time.sleep(0.01)  # Allow time for conversion to begin
+# Step 2: Write to START_CONFIG (0x0B) to set it to active mode (0x00)
+write_register(0x0B, 0x00)  # Active Mode (0x00)
+time.sleep(0.01)  # Ensure the sensor is properly awake
 
-# Step 3: Set the required configuration registers for LHR measurement
-# RPMAX (0x01) for RP range
-write_register(0x01, 0x75)  # RPMAX = 0x75 (as per settings)
-time.sleep(0.01)
-
-# RPMIN (0x02) for RP minimum setting
-write_register(0x02, 0x05)  # RPMIN = 1.5 kΩ (0x05)
-time.sleep(0.01)
-
-# MIN_FREQ (0x03) for minimum frequency setting
+# Step 3: Configure registers for LHR measurement
+write_register(0x01, 0x75)  # RPMAX = 0x75 (as per original code)
+write_register(0x02, 0x05)  # RPMIN = 1.5 kΩ (0x05)
 write_register(0x03, 0x0E)  # MIN_FREQ = 4.0 MHz (0x0E)
-time.sleep(0.01)
-
-# DIG_CONF (0x04) for digital config
-write_register(0x04, 0xE7)  # Set for LHR measurement
-time.sleep(0.01)
-
-# RCOUNT (0x05) for sample rate setting
+write_register(0x04, 0xE7)  # DIG_CONF = 0xE7 (as per original code)
 write_register(0x05, 0x4A)  # RCOUNT_LSB = 0x4A
 write_register(0x06, 0x01)  # RCOUNT_MSB = 0x01
 time.sleep(0.01)
@@ -63,7 +50,7 @@ while True:
         break
     time.sleep(0.01)
 
-# Step 5: Read LHR conversion results from registers 0x38, 0x39, 0x3A
+# Step 5: Read LHR conversion results from registers 0x38, 0x39, and 0x3A
 lhr_data_low = read_register(0x38)  # LHR data lower byte
 lhr_data_high = read_register(0x39)  # LHR data upper byte
 
