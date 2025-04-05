@@ -50,28 +50,24 @@ write_register(0x32, 0x00)  # LHR_OFFSET_LSB = 0
 write_register(0x33, 0x00)  # LHR_OFFSET_MSB = 0
 time.sleep(0.01)
 
-# Step 7: Ensure LHR measurement is ready
-timeout = 10  # Set a timeout limit (in seconds)
-start_time = time.time()
+# Step 7: Check and print contents of LHR-related registers
+print("Checking LHR Configuration Registers:")
+lhr_config = read_register(0x34)
+print(f"LHR_CONFIG: 0x{lhr_config:02X}")
 
-while True:
-    lhr_status = read_register(0x3B)
-    print(f"LHR_STATUS: 0x{lhr_status:02X}")  # Print LHR_STATUS to debug
-    if lhr_status == 0x00:  # Measurement complete
-        break
-    elif time.time() - start_time > timeout:
-        print("Timeout reached, measurement not complete.")
-        break
-    time.sleep(0.1)  # Wait before checking status again
+lhr_rcount_lsb = read_register(0x30)
+lhr_rcount_msb = read_register(0x31)
+print(f"LHR_RCOUNT_LSB: 0x{lhr_rcount_lsb:02X}")
+print(f"LHR_RCOUNT_MSB: 0x{lhr_rcount_msb:02X}")
 
-# Step 8: Read LHR conversion data
-lhr_data_lsb = read_register(0x38)
-lhr_data_mid = read_register(0x39)
-lhr_data_msb = read_register(0x3A)
+lhr_offset_lsb = read_register(0x32)
+lhr_offset_msb = read_register(0x33)
+print(f"LHR_OFFSET_LSB: 0x{lhr_offset_lsb:02X}")
+print(f"LHR_OFFSET_MSB: 0x{lhr_offset_msb:02X}")
 
-# Combine the data bytes into a 24-bit value (LHR result)
-lhr_data = (lhr_data_msb << 16) | (lhr_data_mid << 8) | lhr_data_lsb
-print(f"High-Resolution L Inductance Data: 0x{lhr_data:06X}")
+# Step 8: Check LHR measurement status
+lhr_status = read_register(0x3B)
+print(f"LHR_STATUS: 0x{lhr_status:02X}")
 
 # Step 9: Close SPI connection
 spi.close()
