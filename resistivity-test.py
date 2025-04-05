@@ -32,7 +32,7 @@ write_register(0x0B, 0x01)
 time.sleep(0.01)
 
 # Step 3: Write to DIG_CONFIG (0x04) to configure RP+L conversion interval
-write_register(0x04, 0x03)  # Setting RP+L conversion interval (default is fine here)
+write_register(0x04, 0x03)  # Ensure correct RP+L conversion interval
 time.sleep(0.01)
 
 # Step 4: Write to RP_SET (0x01) to configure measurement dynamic range
