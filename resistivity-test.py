@@ -1,81 +1,62 @@
 import spidev
 import time
 
-# SPI setup
-SPI_BUS = 0
-SPI_DEVICE = 0
-SPI_SPEED = 10000  # 10 kHz
-SPI_MODE = 0
-SPI_BITS = 8
-
-# Initialize SPI
+# Initialize SPI connection
 spi = spidev.SpiDev()
-spi.open(SPI_BUS, SPI_DEVICE)
-spi.max_speed_hz = SPI_SPEED
-spi.mode = SPI_MODE
-spi.bits_per_word = SPI_BITS
+spi.open(0, 0)  # Bus 0, Device 0
+spi.max_speed_hz = 50000
+spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
+
+# Function to write a register
+def write_register(addr, value):
+    # The MSB bit is 0 for write commands
+    addr = addr & 0x7F  # Ensure MSB is 0 for write
+    response = spi.xfer2([addr, value])
+    time.sleep(0.01)  # Delay for SPI stability
+    return response
 
 # Function to read a register
-def read_register(register):
-    response = spi.xfer2([register | 0x80, 0x00])  # MSB=1 for read
-    print(f"Read from 0x{register:02X}: 0x{response[1]:02X}")
-    return response[1]
+def read_register(addr):
+    # The MSB bit is 1 for read commands
+    addr = addr | 0x80  # Set MSB to 1 for read
+    response = spi.xfer2([addr, 0x00])  # Send dummy byte to read data
+    time.sleep(0.01)  # Delay for SPI stability
+    return response[1]  # Return the received data (second byte)
 
-# Function to write to a register
-def write_register(register, value):
-    response = spi.xfer2([register & 0x7F, value])  # MSB=0 for write
-    print(f"Writing to 0x{register:02X}: 0x{value:02X}, Response: 0x{response[1]:02X}")
+# Function to configure the LDC1101 for LHR measurement
+def configure_ldc1101():
+    # Sleep mode needed to configure the LDC chip
+    write_register(0x0B, 0x01)
 
-# Delay for power-up
-time.sleep(0.001)
+    # Register settings for LHR application
+    write_register(0x01, 0x07)  # Set RP_SET (0x01) register value
+    write_register(0x04, 0xE7)  # Set DIG_CONFIG (0x04) register value
+    write_register(0x30, 0x4A)  # Set LHR_RCOUNT_LSB (0x30) register value
+    write_register(0x31, 0x01)  # Set LHR_RCOUNT_MSB (0x31) register value
 
-# Step 1: Read DEVICE_ID (0x3F) to ensure the LDC1101 is working properly
-device_id = read_register(0x3F)
-print(f"DEVICE_ID (0x3F) Value: 0x{device_id:02X}")
+    # Send command to read LHR data (0x38 register)
+    write_register(0xB8, 0x00)  # Command to read register 0x38
 
-# Step 2: Set START_CONFIG (0x0B) to Active Mode (0x00)
-write_register(0x0B, 0x00)  # Set to Active Conversion Mode (b00)
-time.sleep(0.01)  # Wait for the mode to take effect
+    # Return to conversion mode
+    write_register(0x0B, 0x00)
 
-# Step 3: Set DIG_CONFIG (0x04) for LHR measurements
-# RPMAX = 0x75, RPMIN = 0xB1 (1.5 kΩ), MIN_FREQ = 4 MHz, RESP_TIME = 0x07 (don’t care)
-write_register(0x04, 0xE7)  # Set the DIG_CONFIG register for LHR (MIN_FREQ = 4.0 MHz and RESP_TIME)
-time.sleep(0.01)  # Give time for the change to take effect
+# Function to read LHR data from registers
+def read_lhr_data():
+    # Read the LHR data from register 0x38, 0x39, 0x3A
+    lhr_data_1 = read_register(0x38)  # Read from register 0x38
+    lhr_data_2 = read_register(0x39)  # Read from register 0x39
+    lhr_data_3 = read_register(0x3A)  # Read from register 0x3A
+    print(f"LHR Data: 0x{lhr_data_1:02X}, 0x{lhr_data_2:02X}, 0x{lhr_data_3:02X}")
+    return (lhr_data_1, lhr_data_2, lhr_data_3)
 
-# Step 4: Set RP_SET (0x01) with RPMAX = 0x75 (b011) and RPMIN = 0xB1 (1.5 kΩ)
-write_register(0x01, 0x75)  # RPMAX setting (RP_SET)
-time.sleep(0.01)
+# Main function
+def main():
+    configure_ldc1101()
+    # Wait a little for the conversion to complete
+    time.sleep(0.1)
+    lhr_data = read_lhr_data()
+    print(f"Retrieved LHR Data: {lhr_data}")
 
-# Step 5: Set the LHR_RCOUNT register for sample rate
-write_register(0x30, 0x4A)  # LHR_RCOUNT_LSB
-write_register(0x31, 0x01)  # LHR_RCOUNT_MSB
-time.sleep(0.01)
-
-# Step 6: Verify the configuration by reading back important registers
-start_config_value = read_register(0x0B)
-dig_config_value = read_register(0x04)
-rp_set_value = read_register(0x01)
-lhr_rcount_lsb_value = read_register(0x30)
-lhr_rcount_msb_value = read_register(0x31)
-
-# Print the results to verify
-print(f"START_CONFIG (0x0B) Value: 0x{start_config_value:02X}")
-print(f"DIG_CONFIG (0x04) Value: 0x{dig_config_value:02X}")
-print(f"RP_SET (0x01) Value: 0x{rp_set_value:02X}")
-print(f"LHR_RCOUNT_LSB (0x30) Value: 0x{lhr_rcount_lsb_value:02X}")
-print(f"LHR_RCOUNT_MSB (0x31) Value: 0x{lhr_rcount_msb_value:02X}")
-
-# Step 7: Poll LHR_STATUS.DRDYB (0x3B: bit0) for conversion result
-# This could be done by checking the LHR_STATUS register for the conversion completion
-lhr_status = read_register(0x3B)
-print(f"LHR_STATUS (0x3B) Value: 0x{lhr_status:02X}")
-
-# Step 8: After conversion, read the results from 0x38, 0x39, and 0x3A
-lhr_result_lsb = read_register(0x38)
-lhr_result_msb = read_register(0x39)
-lhr_result_full = read_register(0x3A)
-
-print(f"LHR Results: LSB: 0x{lhr_result_lsb:02X}, MSB: 0x{lhr_result_msb:02X}, Full: 0x{lhr_result_full:02X}")
-
-# Close SPI connection
-spi.close()
+# Run the main function
+if __name__ == "__main__":
+    main()
