@@ -1,46 +1,88 @@
 import spidev
 import time
 
-# Initialize SPI
+# SPI setup
 spi = spidev.SpiDev()
-spi.open(0, 1)  # Bus 0, CE1 (Chip Select 1)
-spi.max_speed_hz = 500000  # 500kHz is safe
+spi.open(0, 0)  # Bus 0, CE0
+spi.max_speed_hz = 500000
 spi.mode = 0b00
 
-# LDC1101 Register Addresses
-REG_MODE_CONFIG = 0x01
-REG_RP_MSB = 0x20
-REG_RP_LSB = 0x21
+# LDC1101 register addresses
+REG_START_CONFIG     = 0x01
+REG_RCOUNT_LSB       = 0x08
+REG_RCOUNT_MSB       = 0x09
+REG_SETTLECOUNT_LSB  = 0x10
+REG_SETTLECOUNT_MSB  = 0x11
+REG_CLOCK_DIVIDERS   = 0x1E
+REG_MUX_CONFIG       = 0x1B
+REG_DRIVE_CURRENT    = 0x1C
+REG_CONFIG           = 0x1A
+REG_RP_MSB           = 0x20
+REG_RP_LSB           = 0x21
+REG_STATUS           = 0x19  # Status register for conversion completion
 
-def write_register(register, value):
-    spi.xfer2([register & 0x7F, value])  # MSB = 0 for write
+# SPI read/write functions
+def write_register(reg, value):
+    # For write operations, the MSB must be 0.
+    spi.xfer2([reg & 0x7F, value])
 
-def read_register(register):
-    result = spi.xfer2([0x80 | register, 0x00])  # MSB = 1 for read
-    return result[1]
+def read_register(reg):
+    # For read operations, the MSB must be set. The second byte is a dummy byte (0x00)
+    return spi.xfer2([reg | 0x80, 0x00])[1]
 
-# Initialize LDC1101 to Active Mode
+# LDC1101 initialization function
 def init_ldc1101():
-    # Set to Standby mode
-    write_register(REG_MODE_CONFIG, 0x01)
-    time.sleep(0.1)
+    # Reset the LDC1101: first set to Sleep mode, then Standby mode.
+    write_register(REG_START_CONFIG, 0x03)  # Sleep mode
+    time.sleep(0.05)
+    write_register(REG_START_CONFIG, 0x01)  # Standby mode
+    time.sleep(0.05)
 
-    # Set Active Mode
-    write_register(REG_MODE_CONFIG, 0x02)
-    time.sleep(0.1)
+    # Set RCOUNT (measurement resolution). Here RCOUNT is set to 0x0858.
+    write_register(REG_RCOUNT_MSB, 0x08)
+    write_register(REG_RCOUNT_LSB, 0x58)
 
+    # Set SETTLECOUNT (stabilization time for the LC circuit)
+    write_register(REG_SETTLECOUNT_MSB, 0x00)
+    write_register(REG_SETTLECOUNT_LSB, 0x0A)
+
+    # Set CLOCK_DIVIDERS (default using internal clock)
+    write_register(REG_CLOCK_DIVIDERS, 0x00)
+
+    # Set MUX_CONFIG to RP+L mode
+    write_register(REG_MUX_CONFIG, 0x00)
+
+    # Set DRIVE_CURRENT to maximum to help start oscillation
+    write_register(REG_DRIVE_CURRENT, 0xFF)
+
+    # Set CONFIG to default (0x00)
+    write_register(REG_CONFIG, 0x00)
+
+    # Set START_CONFIG to Active Conversion Mode (FUNC_MODE = b00)
+    write_register(REG_START_CONFIG, 0x00)
+    time.sleep(0.1)  # Allow time for the device to settle
+
+# Function to check if the conversion is complete using the STATUS register
+def is_conversion_complete():
+    status = read_register(REG_STATUS)
+    # Assuming bit 0 of the status register indicates conversion completion
+    return (status & 0x01) != 0
+
+# Read RP values from LDC1101
 def read_rp():
     msb = read_register(REG_RP_MSB)
     lsb = read_register(REG_RP_LSB)
     return (msb << 8) | lsb
 
-# --- Main Execution ---
+# Main execution: initialize the LDC1101 and continuously read RP values.
 init_ldc1101()
-
-# Simple check of registers after initialization
-print(f"Mode Config: {read_register(REG_MODE_CONFIG)}")
+print("LDC1101 initialized in Active RP+L mode. Reading RP values...")
 
 while True:
-    rp = read_rp()
-    print(f"RP Measurement: {rp}")
+    if is_conversion_complete():
+        rp = read_rp()
+        print(f"RP Measurement: {rp}")
+    else:
+        print("Waiting for conversion to complete...")
+    
     time.sleep(0.5)
