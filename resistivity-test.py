@@ -14,27 +14,49 @@ GPIO.setup(CS_PIN, GPIO.OUT)
 # Initialize SPI
 spi = spidev.SpiDev()
 spi.open(0, 0)  # Bus 0, Device 0 (CE0)
-spi.max_speed_hz = 1000000  # 1 MHz for example
+spi.max_speed_hz = 1000000  # 1 MHz for example, adjust if needed
 
-# Function to communicate with the LDC1101
-def communicate_with_ldc1101():
-    # Set CS low to select the device
+# Function to write to the LDC1101
+def write_ldc1101_register(register_address, data):
+    # Set CS low to start the communication
     GPIO.output(CS_PIN, GPIO.LOW)
     
-    # Send a dummy byte (e.g., 0x00) to trigger the communication
-    response = spi.xfer2([0x00])  # Replace with actual LDC1101 commands
+    # Send register address and data (write mode: no 0x80 bit)
+    spi.xfer2([register_address, data])
     
-    # Set CS high to deselect the device
+    # Set CS high to end the communication
     GPIO.output(CS_PIN, GPIO.HIGH)
+
+# Function to read from the LDC1101
+def read_ldc1101_register(register_address):
+    # Set CS low to start the communication
+    GPIO.output(CS_PIN, GPIO.LOW)
     
+    # Send register address with 0x80 bit to indicate a read
+    response = spi.xfer2([register_address | 0x80, 0x00])
+    
+    # Set CS high to end the communication
+    GPIO.output(CS_PIN, GPIO.HIGH)
+
     return response
 
-# Example usage
+# Test Writing to Register 0x00 and Reading It Back
 try:
+    test_value = 0x42  # Example test value to write
+    register = 0x00  # Example register address for testing
+
     while True:
-        response = communicate_with_ldc1101()
-        print("Received data:", response)
-        time.sleep(1)
+        write_ldc1101_register(register, test_value)  # Write test value to register
+        print(f"Written {hex(test_value)} to register {hex(register)}")
+
+        response = read_ldc1101_register(register)  # Read back from register
+        print(f"Read {response} from register {hex(register)}")
+
+        if response != [test_value]:
+            print(f"Error: Response {response} doesn't match written value!")
+        
+        time.sleep(1)  # Sleep for a second between tests
+
 except KeyboardInterrupt:
     print("Exiting program.")
 finally:
