@@ -8,12 +8,11 @@ spi.max_speed_hz = 50000  # Set SPI speed (adjust as necessary)
 spi.mode = 0b00  # Set SPI Mode (Mode 0)
 
 # LDC1101 commands and registers
-LDC1101_CONFIG_CMD = 0x00     # Command to configure (change as needed)
 LDC1101_READ_RP_CMD = 0x10    # Command to read RP data
 LDC1101_READ_L_CMD = 0x11     # Command to read L data
-LDC1101_SHUTDOWN_CMD = 0x0C   # Command to shut down the sensor (use if needed)
+LDC1101_SHUTDOWN_CMD = 0x0C   # Command to shut down the sensor
 LDC1101_SLEEP_CMD = 0x0D      # Command to put the sensor in sleep mode
-LDC1101_MODE_RP_L = 0x01      # Example mode for RP+L
+LDC1101_MODE_RP_L = 0x01      # RP+L mode
 
 # Function to initialize LDC1101 (using initialization logic from mikroSDK)
 def ldc1101_init():
@@ -35,19 +34,17 @@ def ldc1101_setPowerMode(mode):
     """Sets the power mode of the LDC1101."""
     if mode == 'sleep':
         print("Setting LDC1101 to Sleep mode")
-        spi.xfer2([LDC1101_SLEEP_CMD])
+        spi.xfer2([LDC1101_SLEEP_CMD])  # Sleep mode command
     elif mode == 'active':
         print("Setting LDC1101 to Active mode")
-        spi.xfer2([0x00])  # This would be the command to set the sensor to Active mode, based on the SDK function.
+        # Active mode doesn't require any specific command for now
+        pass
 
 def ldc1101_setMode(mode):
     """Sets the mode of the LDC1101."""
     if mode == 'RP+L':
         print("Setting LDC1101 to RP+L mode")
-        spi.xfer2([LDC1101_MODE_RP_L])  # Send RP+L mode command
-    elif mode == 'LHR':
-        print("Setting LDC1101 to LHR mode")
-        spi.xfer2([0x02])  # Example command for LHR mode (you may need to adjust this based on datasheet)
+        spi.xfer2([LDC1101_MODE_RP_L])  # RP+L mode command
 
 def ldc1101_read_register(register):
     """Reads a single register from the LDC1101."""
@@ -59,8 +56,14 @@ def ldc1101_read_data():
     rp_data = ldc1101_read_register(LDC1101_READ_RP_CMD)
     l_data = ldc1101_read_register(LDC1101_READ_L_CMD)
     
-    print(f"Inductive Data (RP): {rp_data}")
-    print(f"Inductive Data (L): {l_data}")
+    print(f"Raw Inductive Data (RP): {rp_data}")
+    print(f"Raw Inductive Data (L): {l_data}")
+    
+    if rp_data == 0 or l_data == 0:
+        print("Warning: Data returned is zero. Ensure that the sensor is correctly connected and the object is near the sensor.")
+    else:
+        print(f"Inductive Data (RP): {rp_data}")
+        print(f"Inductive Data (L): {l_data}")
 
 def main():
     ldc1101_init()  # Initialize the sensor
