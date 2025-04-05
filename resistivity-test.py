@@ -24,9 +24,9 @@ def read_register(register):
 # Delay for power-up
 time.sleep(0.001)
 
-# Read DEVICE_ID (should be 0xB4)
-device_id = read_register(0x00)
-print(f"DEVICE_ID (0x00) Value: 0x{device_id:02X}")
+# Read DEVICE_ID (0x3F) — should return 0xB4
+device_id = read_register(0x3F)
+print(f"DEVICE_ID (0x3F) Value: 0x{device_id:02X}")
 
 # Close SPI connection
 spi.close()
