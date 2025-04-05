@@ -19,26 +19,26 @@ REG_DRIVE_CURRENT    = 0x1C
 REG_CONFIG           = 0x1A
 REG_RP_MSB           = 0x20
 REG_RP_LSB           = 0x21
-REG_STATUS           = 0x19  # Status register for conversion completion
+REG_STATUS           = 0x19  # Status register (check datasheet for flag positions)
 
 # SPI read/write functions
 def write_register(reg, value):
-    # For write operations, the MSB must be 0.
+    # Write operation: MSB is 0.
     spi.xfer2([reg & 0x7F, value])
 
 def read_register(reg):
-    # For read operations, the MSB must be set. The second byte is a dummy byte (0x00)
+    # Read operation: set MSB to 1 and use a dummy byte (0x00)
     return spi.xfer2([reg | 0x80, 0x00])[1]
 
 # LDC1101 initialization function
 def init_ldc1101():
-    # Reset the LDC1101: first set to Sleep mode, then Standby mode.
+    # Reset sequence: Sleep then Standby mode.
     write_register(REG_START_CONFIG, 0x03)  # Sleep mode
     time.sleep(0.05)
     write_register(REG_START_CONFIG, 0x01)  # Standby mode
     time.sleep(0.05)
 
-    # Set RCOUNT (measurement resolution). Here RCOUNT is set to 0x0858.
+    # Set RCOUNT (measurement resolution), e.g., RCOUNT = 0x0858.
     write_register(REG_RCOUNT_MSB, 0x08)
     write_register(REG_RCOUNT_LSB, 0x58)
 
@@ -65,8 +65,9 @@ def init_ldc1101():
 # Function to check if the conversion is complete using the STATUS register
 def is_conversion_complete():
     status = read_register(REG_STATUS)
-    # Assuming bit 0 of the status register indicates conversion completion
-    return (status & 0x01) != 0
+    print("Raw status register value:", hex(status))
+    # Update: Try checking bit 7 (0x80) for conversion complete instead of bit 0.
+    return (status & 0x80) != 0
 
 # Read RP values from LDC1101
 def read_rp():
