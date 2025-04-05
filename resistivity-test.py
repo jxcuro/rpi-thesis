@@ -3,7 +3,7 @@ import time
 
 # Initialize SPI
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Bus 0, CE0 (Chip Select 0)
+spi.open(0, 1)  # Bus 0, CE1 (Chip Select 1)
 spi.max_speed_hz = 500000  # 500kHz is safe
 spi.mode = 0b00
 
@@ -22,11 +22,13 @@ REG_RP_LSB           = 0x21
 
 def write_register(register, value):
     """Write value to register."""
+    print(f"Writing to register {hex(register)}: {hex(value)}")
     spi.xfer2([register & 0x7F, value])  # MSB = 0 for write
 
 def read_register(register):
     """Read value from register."""
     result = spi.xfer2([0x80 | register, 0x00])  # MSB = 1 for read
+    print(f"Reading register {hex(register)}: {hex(result[1])}")
     return result[1]
 
 def init_ldc1101():
@@ -69,22 +71,17 @@ def read_rp():
     lsb = read_register(REG_RP_LSB)
     return (msb << 8) | lsb
 
-def check_registers():
-    """Check if registers are being updated."""
-    for reg in [REG_MODE_CONFIG, REG_RCOUNT_MSB, REG_RCOUNT_LSB, REG_SETTLECOUNT_MSB, REG_SETTLECOUNT_LSB, REG_RP_MSB, REG_RP_LSB]:
-        value = read_register(reg)
-        print(f"Register {hex(reg)}: {hex(value)}")
-
 # --- Main Execution ---
 init_ldc1101()
 
 # Check if registers are being updated
-check_registers()
+print("Reading registers after initialization:")
+for reg in [REG_MODE_CONFIG, REG_RCOUNT_MSB, REG_RCOUNT_LSB, REG_SETTLECOUNT_MSB, REG_SETTLECOUNT_LSB, REG_RP_MSB, REG_RP_LSB]:
+    print(f"Register {hex(reg)}: {hex(read_register(reg))}")
 
 print("LDC1101 Initialized in ACTIVE mode. Reading RP values:")
 
 while True:
     rp = read_rp()
     print(f"RP Measurement: {rp}")
-    check_registers()  # Check registers again to see if they are updating
     time.sleep(0.5)
