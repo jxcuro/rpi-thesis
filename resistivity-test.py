@@ -1,71 +1,56 @@
 import spidev
 import time
 
-# Constants
-LDC1101_SPI_READ = 0x80
-DUMMY = 0x00
-
-# Register addresses
-REG_DEVICE_ID = 0x00
-REG_PWRCONFIG = 0x1F
-REG_RP_L_MEASUREMENT_CONFIG = 0x1E
-REG_LHR_CONFIG = 0x1D
-REG_LHR_DATA_MSB = 0x23
-REG_LHR_DATA_MID = 0x24
-REG_LHR_DATA_LSB = 0x25
-
-# Config values
-MODE_ACTIVE_CONVERSION = 0x01
-ALT_CONFIG_LHR = 0x30
-LHR_CONTINUOUS = 0x20
-
-# Clock
-F_CLKIN = 16000000  # 16 MHz
-
 class LDC1101:
-    def __init__(self, bus=0, device=0):
+    REG_DEVICE_ID = 0x3F
+    REG_POWER_CONFIG = 0x0B
+    REG_LHR_DATA_MSB = 0x22
+    REG_LHR_DATA_MID = 0x23
+    REG_LHR_DATA_LSB = 0x24
+    REG_LHR_MODE = 0x0D
+
+    def __init__(self, bus=0, device=0, spi_speed=10000):  # SPI speed set to 10kHz
         self.spi = spidev.SpiDev()
         self.spi.open(bus, device)
-        self.spi.max_speed_hz = 100000  # Slower SPI for reliability
+        self.spi.max_speed_hz = spi_speed
         self.spi.mode = 0b00
 
     def write_register(self, reg, value):
-        self.spi.xfer2([reg, value])
+        self.spi.xfer2([reg & 0x7F, value])
 
     def read_register(self, reg):
-        response = self.spi.xfer2([reg | LDC1101_SPI_READ, DUMMY])
-        print(f"Read Reg 0x{reg:02X}: sent {[hex(b) for b in response]}")
-        return response[1]
+        return self.spi.xfer2([reg | 0x80, 0x00])[1]
 
-    def read_device_id(self):
-        return self.read_register(REG_DEVICE_ID)
+    def init_device(self):
+        device_id = self.read_register(self.REG_DEVICE_ID)
+        print(f"Device ID: 0x{device_id:02X}")
+        return device_id
 
-    def configure_lhr(self):
-        self.write_register(REG_RP_L_MEASUREMENT_CONFIG, ALT_CONFIG_LHR)
-        self.write_register(REG_LHR_CONFIG, LHR_CONTINUOUS)
-        self.write_register(REG_PWRCONFIG, MODE_ACTIVE_CONVERSION)
+    def set_lhr_mode(self):
+        self.write_register(self.REG_POWER_CONFIG, 0x01)  # Active Conversion Mode
+        self.write_register(self.REG_LHR_MODE, 0x01)      # Enable LHR mode
         time.sleep(0.1)
 
-    def read_lhr_data(self):
-        msb = self.read_register(REG_LHR_DATA_MSB)
-        mid = self.read_register(REG_LHR_DATA_MID)
-        lsb = self.read_register(REG_LHR_DATA_LSB)
-        return (msb << 16) | (mid << 8) | lsb
+    def read_lhr_raw(self):
+        msb = self.read_register(self.REG_LHR_DATA_MSB)
+        mid = self.read_register(self.REG_LHR_DATA_MID)
+        lsb = self.read_register(self.REG_LHR_DATA_LSB)
+        raw = (msb << 16) | (mid << 8) | lsb
+        return raw
 
-    def calculate_frequency(self, lhr_data):
-        return (lhr_data * F_CLKIN) / (2**24)
+    def calculate_frequency(self, lhr_raw, ref_clk=16000000):  # 16 MHz internal clock
+        return (lhr_raw * ref_clk) / (2**24)
 
-ldc = LDC1101()
+    def close(self):
+        self.spi.close()
 
-device_id = ldc.read_device_id()
-print(f"Device ID: 0x{device_id:02X}")
-
-if device_id == 0x84:  # Typical LDC1101 ID
-    ldc.configure_lhr()
-    while True:
-        lhr = ldc.read_lhr_data()
-        freq = ldc.calculate_frequency(lhr)
-        print(f"LHR raw: {lhr}, Sensor Frequency: {freq:.2f} Hz")
-        time.sleep(0.5)
+# --- Example usage ---
+sensor = LDC1101()
+if sensor.init_device() == 0x84:
+    sensor.set_lhr_mode()
+    lhr_raw = sensor.read_lhr_raw()
+    freq = sensor.calculate_frequency(lhr_raw)
+    print(f"LHR raw: {lhr_raw}, Sensor Frequency: {freq:.2f} Hz")
 else:
-    print("LDC1101 not detected. Check wiring, SPI config, and power.")
+    print("LDC1101 not detected. Check wiring and SPI setup.")
+sensor.close()
