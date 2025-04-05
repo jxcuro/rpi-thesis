@@ -9,13 +9,13 @@ spi.mode = 0b00  # Set SPI Mode (Mode 0)
 
 # LDC1101 commands and registers
 LDC1101_STATUS_REG = 0x00  # Status register address
-LDC1101_READ_RP_CMD = 0x10    # Command to read RP data
-LDC1101_READ_L_CMD = 0x11     # Command to read L data
-LDC1101_SHUTDOWN_CMD = 0x0C   # Command to shut down the sensor
-LDC1101_SLEEP_CMD = 0x0D      # Command to put the sensor in sleep mode
-LDC1101_MODE_RP_L = 0x01      # RP+L mode
+LDC1101_READ_RP_CMD = 0x10  # Command to read RP data
+LDC1101_READ_L_CMD = 0x11  # Command to read L data
+LDC1101_SHUTDOWN_CMD = 0x0C  # Command to shut down the sensor
+LDC1101_SLEEP_CMD = 0x0D  # Command to put the sensor in sleep mode
+LDC1101_MODE_RP_L = 0x01  # RP+L mode
 
-# Function to initialize LDC1101 (using initialization logic from mikroSDK)
+# Function to initialize LDC1101
 def ldc1101_init():
     """Initializes the LDC1101 sensor."""
     print("Initializing LDC1101...")
@@ -32,7 +32,7 @@ def ldc1101_init():
     # Verify if it's in active mode
     ldc1101_checkStatus()
     
-    time.sleep(0.1)  # Allow the sensor some time to initialize
+    time.sleep(0.5)  # Allow the sensor some time to stabilize
 
 def ldc1101_setPowerMode(mode):
     """Sets the power mode of the LDC1101."""
