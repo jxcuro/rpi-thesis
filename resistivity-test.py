@@ -32,42 +32,35 @@ write_register(0x0B, 0x01)
 time.sleep(0.01)
 
 # Step 3: Write to DIG_CONFIG (0x04) to configure RP+L conversion interval
-write_register(0x04, 0x03)
+write_register(0x04, 0x03)  # Setting RP+L conversion interval (default is fine here)
 time.sleep(0.01)
 
 # Step 4: Write to RP_SET (0x01) to configure measurement dynamic range
-write_register(0x01, 0x07)
+write_register(0x01, 0x07)  # Setting dynamic range for RP measurement
 time.sleep(0.01)
 
-# Step 5: Configure High Resolution L (LHR) Mode
-write_register(0x34, 0x01)  # Set LHR_CONFIG to 0x01 to enable High-Resolution L mode
+# Step 5: Reset LHR_CONFIG to 0x01 to ensure High-Resolution L mode is enabled
+write_register(0x34, 0x01)  # Set LHR_CONFIG register to 0x01
 time.sleep(0.01)
 
-# Step 6: Set LHR reference count and offset to default values for testing
-write_register(0x30, 0x00)  # LHR_RCOUNT_LSB = 0
-write_register(0x31, 0x00)  # LHR_RCOUNT_MSB = 0
-write_register(0x32, 0x00)  # LHR_OFFSET_LSB = 0
-write_register(0x33, 0x00)  # LHR_OFFSET_MSB = 0
-time.sleep(0.01)
-
-# Step 7: Continuously check and print LHR status until it changes
+# Step 6: Check and ensure the LHR_STATUS has changed
 print("Waiting for LHR measurement to complete...")
 timeout = time.time() + 5  # Timeout after 5 seconds to prevent an infinite loop
 
 while time.time() < timeout:
-    lhr_status = read_register(0x3B)
+    lhr_status = read_register(0x3B)  # Read LHR_STATUS register
     print(f"LHR_STATUS: 0x{lhr_status:02X}")
-    if lhr_status == 0x00:
+    if lhr_status == 0x00:  # Measurement completed
         print("Measurement completed!")
         break
     time.sleep(0.1)  # Check the status every 100 ms
 
-# Step 8: Read and print LHR data if status has changed
+# Step 7: If measurement completed, read and print LHR data
 if lhr_status == 0x00:
     lhr_data_lsb = read_register(0x38)
     lhr_data_msb = read_register(0x39)
     lhr_data_high = read_register(0x3A)
     print(f"LHR_DATA: 0x{lhr_data_high:02X}{lhr_data_msb:02X}{lhr_data_lsb:02X}")
 
-# Step 9: Close SPI connection
+# Step 8: Close SPI connection
 spi.close()
