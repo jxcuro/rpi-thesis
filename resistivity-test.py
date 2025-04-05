@@ -1,62 +1,63 @@
 import spidev
 import time
 
-# Initialize SPI connection
+# Define SPI parameters
+SPI_BUS = 0
+SPI_DEVICE = 0
+SPI_SPEED = 10000  # 10 kHz for safe timing
+SPI_MODE = 0
+SPI_BITS = 8
+
+# Initialize SPI
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Bus 0, Device 0
-spi.max_speed_hz = 50000
-spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
+spi.open(SPI_BUS, SPI_DEVICE)
+spi.max_speed_hz = SPI_SPEED
+spi.mode = SPI_MODE
+spi.bits_per_word = SPI_BITS
 
-# Function to write a register
-def write_register(addr, value):
-    # The MSB bit is 0 for write commands
-    addr = addr & 0x7F  # Ensure MSB is 0 for write
-    response = spi.xfer2([addr, value])
-    time.sleep(0.01)  # Delay for SPI stability
-    return response
+# Function to read data from LDC1101 register
+def read_register(register):
+    # Add 0x80 to register to indicate a read operation (MSB = 1)
+    response = spi.xfer2([register | 0x80, 0x00])  # 0x80 enables read
+    print(f"Read from 0x{register:02X}: 0x{response[1]:02X}")
+    return response[1]
 
-# Function to read a register
-def read_register(addr):
-    # The MSB bit is 1 for read commands
-    addr = addr | 0x80  # Set MSB to 1 for read
-    response = spi.xfer2([addr, 0x00])  # Send dummy byte to read data
-    time.sleep(0.01)  # Delay for SPI stability
-    return response[1]  # Return the received data (second byte)
+# Function to write data to LDC1101 register
+def write_register(register, value):
+    # Remove 0x80 to indicate write operation (MSB = 0)
+    response = spi.xfer2([register & 0x7F, value])  # 0x7F disables read operation
+    print(f"Writing to 0x{register:02X}: 0x{value:02X}, Response: 0x{response[1]:02X}")
 
-# Function to configure the LDC1101 for LHR measurement
-def configure_ldc1101():
-    # Sleep mode needed to configure the LDC chip
-    write_register(0x0B, 0x01)
+# Step 1: Delay after power-up to allow initialization (0.8 ms)
+time.sleep(0.001)  # Wait for 1 ms to ensure proper initialization
 
-    # Register settings for LHR application
-    write_register(0x01, 0x07)  # Set RP_SET (0x01) register value
-    write_register(0x04, 0xE7)  # Set DIG_CONFIG (0x04) register value
-    write_register(0x30, 0x4A)  # Set LHR_RCOUNT_LSB (0x30) register value
-    write_register(0x31, 0x01)  # Set LHR_RCOUNT_MSB (0x31) register value
+# Step 2: Write to START_CONFIG (0x0B) to set it to active mode (0x01)
+write_register(0x0B, 0x01)  # Active Mode (0x01)
+time.sleep(0.01)  # Ensure the sensor is properly awake
 
-    # Send command to read LHR data (0x38 register)
-    write_register(0xB8, 0x00)  # Command to read register 0x38
+# Step 3: Write to DIG_CONFIG (0x04) to configure RP+L conversion interval
+write_register(0x04, 0xE7)  # RP+L conversion interval setting
+time.sleep(0.01)  # Give time for the configuration to take effect
 
-    # Return to conversion mode
-    write_register(0x0B, 0x00)
+# Step 4: Write to RP_SET (0x01) to configure measurement dynamic range
+write_register(0x01, 0x07)  # Example setting for RP_SET
+time.sleep(0.01)  # Ensure proper setting time
 
-# Function to read LHR data from registers
-def read_lhr_data():
-    # Read the LHR data from register 0x38, 0x39, 0x3A
-    lhr_data_1 = read_register(0x38)  # Read from register 0x38
-    lhr_data_2 = read_register(0x39)  # Read from register 0x39
-    lhr_data_3 = read_register(0x3A)  # Read from register 0x3A
-    print(f"LHR Data: 0x{lhr_data_1:02X}, 0x{lhr_data_2:02X}, 0x{lhr_data_3:02X}")
-    return (lhr_data_1, lhr_data_2, lhr_data_3)
+# Step 5: Request data (LHR) from the sensor using the correct command
+write_register(0xB8, 0x00)  # Read LHR data command (0xB8)
 
-# Main function
-def main():
-    configure_ldc1101()
-    # Wait a little for the conversion to complete
-    time.sleep(0.1)
-    lhr_data = read_lhr_data()
-    print(f"Retrieved LHR Data: {lhr_data}")
+# Step 6: Return to conversion mode by writing back to START_CONFIG
+write_register(0x0B, 0x00)  # Active mode (0x00)
 
-# Run the main function
-if __name__ == "__main__":
-    main()
+# Verify the changes
+start_config_value = read_register(0x0B)
+dig_config_value = read_register(0x04)
+rp_set_value = read_register(0x01)
+
+# Print the results
+print(f"START_CONFIG (0x0B) Value: 0x{start_config_value:02X}")
+print(f"DIG_CONFIG (0x04) Value: 0x{dig_config_value:02X}")
+print(f"RP_SET (0x01) Value: 0x{rp_set_value:02X}")
+
+# Close SPI connection
+spi.close()
