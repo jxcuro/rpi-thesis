@@ -8,6 +8,7 @@ spi.max_speed_hz = 50000  # Set SPI speed (adjust as necessary)
 spi.mode = 0b00  # Set SPI Mode (Mode 0)
 
 # LDC1101 commands and registers
+LDC1101_STATUS_REG = 0x00  # Status register address
 LDC1101_READ_RP_CMD = 0x10    # Command to read RP data
 LDC1101_READ_L_CMD = 0x11     # Command to read L data
 LDC1101_SHUTDOWN_CMD = 0x0C   # Command to shut down the sensor
@@ -28,6 +29,9 @@ def ldc1101_init():
     # After configuring, switch to Active mode
     ldc1101_setPowerMode('active')
     
+    # Verify if it's in active mode
+    check_active_mode()
+    
     time.sleep(0.1)  # Allow the sensor some time to initialize
 
 def ldc1101_setPowerMode(mode):
@@ -45,6 +49,18 @@ def ldc1101_setMode(mode):
     if mode == 'RP+L':
         print("Setting LDC1101 to RP+L mode")
         spi.xfer2([LDC1101_MODE_RP_L])  # RP+L mode command
+
+def ldc1101_checkStatus():
+    """Reads the status register to check the current mode."""
+    response = spi.xfer2([LDC1101_STATUS_REG | 0x80, 0x00])  # Read status register
+    status_byte = response[1]
+    print(f"Status Register: 0x{status_byte:02X}")
+    
+    # Check the status byte for Active Mode (Bit 3 indicates 'Active')
+    if (status_byte & 0x08) != 0:
+        print("LDC1101 is in Active mode")
+    else:
+        print("LDC1101 is NOT in Active mode")
 
 def ldc1101_read_register(register):
     """Reads a single register from the LDC1101."""
