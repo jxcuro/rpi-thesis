@@ -13,7 +13,7 @@ LDC1101_READ_RP_CMD = 0x10  # Command to read RP data
 LDC1101_READ_L_CMD = 0x11  # Command to read L data
 LDC1101_SHUTDOWN_CMD = 0x0C  # Command to shut down the sensor
 LDC1101_SLEEP_CMD = 0x0D  # Command to put the sensor in sleep mode
-LDC1101_MODE_RP_L = 0x01  # RP+L mode
+LDC1101_MODE_RP_L = 0x01  # RP+L mode (activate RP and L channels)
 
 # Function to initialize LDC1101
 def ldc1101_init():
@@ -30,9 +30,10 @@ def ldc1101_init():
     ldc1101_setPowerMode('active')
     
     # Verify if it's in active mode
+    time.sleep(0.5)  # Allow time for the mode change
     ldc1101_checkStatus()
     
-    time.sleep(0.5)  # Allow the sensor some time to stabilize
+    time.sleep(0.5)  # Allow time for the sensor to stabilize
 
 def ldc1101_setPowerMode(mode):
     """Sets the power mode of the LDC1101."""
@@ -47,8 +48,9 @@ def ldc1101_setPowerMode(mode):
 def ldc1101_setMode(mode):
     """Sets the mode of the LDC1101."""
     if mode == 'RP+L':
-        print("Setting LDC1101 to RP+L mode")
+        print("Setting LDC1101 to RP+L mode (Impedance and Inductance Mode)")
         spi.xfer2([LDC1101_MODE_RP_L])  # RP+L mode command
+        time.sleep(0.1)  # Short delay to allow mode change
 
 def ldc1101_checkStatus():
     """Reads the status register to check the current mode."""
