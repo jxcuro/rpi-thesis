@@ -20,7 +20,7 @@ def read_register(register):
     response = spi.xfer2([register | 0x80, 0x00])  # 0x80 enables read
     return response[1]
 
-# Read the Inductance Data Registers
+# Read the Inductance Data Registers (L_DATA_LSB and L_DATA_MSB)
 l_data_lsb = read_register(0x23)  # L_DATA_LSB (low byte)
 l_data_msb = read_register(0x24)  # L_DATA_MSB (high byte)
 
