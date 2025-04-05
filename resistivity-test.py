@@ -19,6 +19,7 @@ REG_DRIVE_CURRENT    = 0x1C
 REG_CONFIG           = 0x1A
 REG_RP_MSB           = 0x20
 REG_RP_LSB           = 0x21
+REG_STATUS           = 0x0B  # Status Register
 
 def write_register(register, value):
     """Write value to register."""
@@ -71,17 +72,22 @@ def read_rp():
     lsb = read_register(REG_RP_LSB)
     return (msb << 8) | lsb
 
+def read_status():
+    """Read the status register to check the device status."""
+    return read_register(REG_STATUS)
+
 # --- Main Execution ---
 init_ldc1101()
 
 # Check if registers are being updated
 print("Reading registers after initialization:")
-for reg in [REG_MODE_CONFIG, REG_RCOUNT_MSB, REG_RCOUNT_LSB, REG_SETTLECOUNT_MSB, REG_SETTLECOUNT_LSB, REG_RP_MSB, REG_RP_LSB]:
+for reg in [REG_MODE_CONFIG, REG_RCOUNT_MSB, REG_RCOUNT_LSB, REG_SETTLECOUNT_MSB, REG_SETTLECOUNT_LSB, REG_RP_MSB, REG_RP_LSB, REG_STATUS]:
     print(f"Register {hex(reg)}: {hex(read_register(reg))}")
 
 print("LDC1101 Initialized in ACTIVE mode. Reading RP values:")
 
 while True:
     rp = read_rp()
-    print(f"RP Measurement: {rp}")
+    status = read_status()
+    print(f"RP Measurement: {rp}, Status Register: {status}")
     time.sleep(0.5)
