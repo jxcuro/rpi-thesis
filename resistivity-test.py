@@ -41,6 +41,11 @@ time.sleep(0.01)
 
 # Step 5: Configure High Resolution L (LHR) Mode
 write_register(0x34, 0x01)  # Enable High-Resolution L Mode (LHR_CONFIG)
+time.sleep(0.01)  # Allow time for configuration to take effect
+
+# Check if LHR_CONFIG is set correctly
+lhr_config_value = read_register(0x34)
+print(f"LHR_CONFIG register: 0x{lhr_config_value:02X}")
 
 # Step 6: Start LHR conversion
 write_register(0x0B, 0x01)  # Ensure the sensor is in active mode
@@ -49,6 +54,7 @@ time.sleep(0.04)  # Wait for wake-up time
 # Step 7: Wait for LHR measurement to complete (check status)
 while True:
     lhr_status = read_register(0x3B)
+    print(f"LHR_STATUS: 0x{lhr_status:02X}")  # Print LHR_STATUS to debug
     if lhr_status == 0x00:  # Measurement complete
         break
     time.sleep(0.01)  # Wait before checking status again
