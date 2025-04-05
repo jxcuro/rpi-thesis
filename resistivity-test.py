@@ -31,7 +31,7 @@ time.sleep(0.001)  # Wait for 1 ms to ensure proper initialization
 
 # Step 2: Write to START_CONFIG (0x0B) to set it to active mode (0x01)
 write_register(0x0B, 0x01)  # Active Mode (0x01)
-time.sleep(0.01)  # Ensure the sensor is properly awake
+time.sleep(0.02)  # Increased delay to 20 ms to give sensor more time
 
 # Step 3: Write to DIG_CONFIG (0x04) to configure RP+L conversion interval
 write_register(0x04, 0x03)  # RP+L conversion interval setting
