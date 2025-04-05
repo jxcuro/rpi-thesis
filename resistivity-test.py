@@ -1,49 +1,103 @@
 import time
-import spidev
+import smbus
 
-# Initialize SPI interface
-spi = spidev.SpiDev()
-spi.open(0, 0)  # Bus 0, Device 0
-spi.max_speed_hz = 1000000  # 1 MHz SPI clock speed
+# Initialize I2C bus
+bus = smbus.SMBus(1)
 
-# Function to write a value to a register
-def write_register(register, value):
-    spi.xfer2([register, value])
+# LDC1101 I2C address
+LDC1101_ADDRESS = 0x2A
 
-# Function to read a value from a register
-def read_register(register):
-    response = spi.xfer2([register, 0x00])
-    return response[1]
+def read_register(address, register):
+    try:
+        return bus.read_byte_data(address, register)
+    except Exception as e:
+        print(f"Error reading register 0x{register:02X}: {e}")
+        return None
 
-# Initialize necessary registers
-def initialize_registers():
-    # Set LHR_CONFIG to 0x00 to reset configuration
-    write_register(0x34, 0x00)  # LHR_CONFIG reset
+def check_LHR_status():
+    # Read the LHR_STATUS register (0x01)
+    status = read_register(LDC1101_ADDRESS, 0x01)
+    if status is not None:
+        print(f"LHR_STATUS (0x01): 0x{status:02X}")
+        if status & 0x01 == 0:
+            print("LHR Data Ready: Unread data is available.")
+        else:
+            print("LHR Data Ready: No unread data.")
+        
+        # Check for any errors in the status register
+        if status & 0x10:
+            print("Zero Count Error (ERR_ZC): Occurred.")
+        else:
+            print("Zero Count Error (ERR_ZC): No error.")
+        
+        if status & 0x08:
+            print("Conversion Over-range Error (ERR_OR): Occurred.")
+        else:
+            print("Conversion Over-range Error (ERR_OR): No error.")
+        
+        if status & 0x04:
+            print("Conversion Under-range Error (ERR_UR): Occurred.")
+        else:
+            print("Conversion Under-range Error (ERR_UR): No error.")
+        
+        if status & 0x02:
+            print("Conversion Overflow Error (ERR_OF): Occurred.")
+        else:
+            print("Conversion Overflow Error (ERR_OF): No error.")
 
-    # Wait for a while to ensure settings take effect
-    time.sleep(0.1)
+def configure_LHR():
+    # Example: Configure LHR registers (0x0E, 0x0F, 0x10) and ensure it's done correctly.
+    # These settings depend on your specific use case; below is just an example.
+    print("Configuring LHR registers...")
 
-    # Check if LHR_CONFIG is set to 0x00
-    lhr_config = read_register(0x34)
-    print(f"LHR_CONFIG (0x34): {hex(lhr_config)}")
-
-    # Set LHR_CONFIG to 0x01 for enabling high-resolution L measurement
-    write_register(0x34, 0x01)
+    # Example: Write to register 0x0E (LHR configuration)
+    bus.write_byte_data(LDC1101_ADDRESS, 0x0E, 0x01)  # Write some example configuration byte
+    print("Wrote to 0x0E: 0x01")
     
-    # Wait again for the configuration to take effect
-    time.sleep(0.1)
+    # Example: Write to register 0x0F (LHR configuration)
+    bus.write_byte_data(LDC1101_ADDRESS, 0x0F, 0x02)  # Another example configuration
+    print("Wrote to 0x0F: 0x02")
+    
+    # Example: Write to register 0x10 (LHR configuration)
+    bus.write_byte_data(LDC1101_ADDRESS, 0x10, 0x03)  # Another example configuration
+    print("Wrote to 0x10: 0x03")
 
-    # Check if the LHR_CONFIG is properly set to 0x01
-    lhr_config = read_register(0x34)
-    print(f"LHR_CONFIG (0x34) after setting: {hex(lhr_config)}")
+def check_conversion_data():
+    # Read the LHR Conversion Data register (0x38) for the latest result
+    data = read_register(LDC1101_ADDRESS, 0x38)
+    if data is not None:
+        print(f"LHR Conversion Data (0x38): {data}")
+    else:
+        print("No conversion data available.")
+    
+def wait_for_data_ready():
+    print("Waiting for LHR data to be ready...")
+    while True:
+        status = read_register(LDC1101_ADDRESS, 0x01)
+        if status & 0x01 == 0:  # LHR_DRDY == 0 means data is ready
+            print("Data is ready!")
+            break
+        else:
+            print("Waiting for data to be ready...")
+        time.sleep(0.1)
 
-# Function to read all registers for debugging
-def read_all_registers():
-    print("Reading all registers:")
-    for reg in range(0x00, 0x40):  # Checking a range of registers
-        value = read_register(reg)
-        print(f"Register {hex(reg)}: {hex(value)}")
+# Main function to configure and check status
+def main():
+    print("Checking initial LHR_STATUS...")
+    check_LHR_status()
+    
+    print("\nConfiguring LHR...")
+    configure_LHR()
+    
+    print("\nWaiting for data to be ready...")
+    wait_for_data_ready()
+    
+    print("\nChecking LHR_STATUS again after configuration...")
+    check_LHR_status()
+    
+    print("\nReading conversion data...")
+    check_conversion_data()
 
-# Run the initialization and register reading functions
-initialize_registers()
-read_all_registers()
+# Run the main function
+if __name__ == "__main__":
+    main()
