@@ -1,5 +1,4 @@
 import spidev
-import time
 
 # Define SPI parameters
 SPI_BUS = 0
@@ -20,18 +19,14 @@ def read_register(register):
     response = spi.xfer2([register | 0x80, 0x00])  # 0x80 enables read
     return response[1]
 
-# List of registers to read (from datasheet)
-register_addresses = [
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 
-    0x0B, 0x0C, 0x16, 0x17, 0x18, 0x19, 0x20, 0x21, 0x22, 0x23, 
-    0x24, 0x30, 0x31, 0x32, 0x33, 0x34, 0x38, 0x39, 0x3A, 0x3B, 
-    0x3E, 0x3F
-]
+# Read the STATUS register (0x20)
+status_value = read_register(0x20)
 
-# Read and print all registers
-for register in register_addresses:
-    value = read_register(register)
-    print(f"Register 0x{register:02X} Value: 0x{value:02X}")
+# Check the lower 2 bits of the status register for error flags
+error_flags = status_value & 0x03  # Mask the lower 2 bits
+
+print(f"STATUS Register Value: 0x{status_value:02X}")
+print(f"Error Flags: 0x{error_flags:02X}")
 
 # Close SPI connection
 spi.close()
