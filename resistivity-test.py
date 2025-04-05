@@ -26,14 +26,16 @@ class LDC1101:
     def __init__(self, bus=0, device=0):
         self.spi = spidev.SpiDev()
         self.spi.open(bus, device)
-        self.spi.max_speed_hz = 500000
-        self.spi.mode = 0
+        self.spi.max_speed_hz = 100000  # Slower SPI for reliability
+        self.spi.mode = 0b00
 
     def write_register(self, reg, value):
         self.spi.xfer2([reg, value])
 
     def read_register(self, reg):
-        return self.spi.xfer2([reg | LDC1101_SPI_READ, DUMMY])[1]
+        response = self.spi.xfer2([reg | LDC1101_SPI_READ, DUMMY])
+        print(f"Read Reg 0x{reg:02X}: sent {[hex(b) for b in response]}")
+        return response[1]
 
     def read_device_id(self):
         return self.read_register(REG_DEVICE_ID)
@@ -58,7 +60,7 @@ ldc = LDC1101()
 device_id = ldc.read_device_id()
 print(f"Device ID: 0x{device_id:02X}")
 
-if device_id == 0x84:  # Typical ID for LDC1101
+if device_id == 0x84:  # Typical LDC1101 ID
     ldc.configure_lhr()
     while True:
         lhr = ldc.read_lhr_data()
@@ -66,4 +68,4 @@ if device_id == 0x84:  # Typical ID for LDC1101
         print(f"LHR raw: {lhr}, Sensor Frequency: {freq:.2f} Hz")
         time.sleep(0.5)
 else:
-    print("LDC1101 not detected. Check wiring or power.")
+    print("LDC1101 not detected. Check wiring, SPI config, and power.")
