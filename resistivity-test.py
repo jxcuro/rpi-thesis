@@ -1,110 +1,55 @@
 import spidev
 import time
 
-# Constants for LDC1101 Registers (same as in C code)
-LDC1101_REG_CFG_RP_MEASUREMENT_DYNAMIC_RANGE = 0x01
-LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_1 = 0x02
-LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_2 = 0x03
-LDC1101_REG_CFG_RP_L_CONVERSION_INTERVAL = 0x04
-LDC1101_REG_CFG_ADDITIONAL_DEVICE = 0x05
-LDC1101_REG_RP_THRESH_H_LSB = 0x06
-LDC1101_REG_RP_THRESH_H_MSB = 0x07
-LDC1101_REG_RP_THRESH_L_LSB = 0x08
-LDC1101_REG_RP_THRESH_L_MSB = 0x09
-LDC1101_REG_CFG_INTB_MODE = 0x0A
-LDC1101_REG_CFG_POWER_STATE = 0x0B
-LDC1101_REG_AMPLITUDE_CONTROL_REQUIREMENT = 0x0C
-LDC1101_REG_L_THRESH_HI_LSB = 0x16
-LDC1101_REG_L_THRESH_HI_MSB = 0x17
-LDC1101_REG_L_THRESH_LO_LSB = 0x18
-LDC1101_REG_L_THRESH_LO_MSB = 0x19
-LDC1101_REG_RP_L_MEASUREMENT_STATUS = 0x20
-LDC1101_REG_RP_DATA_LSB = 0x21
-LDC1101_REG_RP_DATA_MSB = 0x22
-LDC1101_REG_L_DATA_LSB = 0x23
-LDC1101_REG_L_DATA_MSB = 0x24
-LDC1101_REG_LHR_RCOUNT_LSB = 0x30
-LDC1101_REG_LHR_RCOUNT_MSB = 0x31
-LDC1101_REG_LHR_OFFSET_LSB = 0x32
-LDC1101_REG_LHR_OFFSET_MSB = 0x33
-LDC1101_REG_CFG_LHR = 0x34
-LDC1101_REG_LHR_DATA_LSB = 0x38
-LDC1101_REG_LHR_DATA_MID = 0x39
-LDC1101_REG_LHR_DATA_MSB = 0x3A
-LDC1101_REG_LHR_STATUS = 0x3B
-LDC1101_REG_DEVICE_RID_VALUE = 0x3E
-LDC1101_REG_CHIP_ID = 0x3F
+# Define constants for the LDC1101 register addresses
+LDC1101_REG_CFG_ADDITIONAL_DEVICE = 0x30  # Register address for Additional device configuration
+LDC1101_REG_AMPLITUDE_CONTROL_REQUIREMENT = 0x34  # Register address for Amplitude control
+LDC1101_REG_L_DATA_MSB = 0x10  # Register address for MSB of L data
+LDC1101_REG_L_DATA_LSB = 0x11  # Register address for LSB of L data
+LDC1101_SPI_READ = 0x80  # Read operation mask for SPI
 
-# SPI Setup
+# LDC1101 command masks for LHR mode
+LDC1101_ALT_CFG_L_OPTIMAL_ENABLE = 0x10  # Enable LHR mode
+LDC1101_CONTINUES_CONVERT = 0x01  # Continuous conversion mode
+
+# Setup SPI
 spi = spidev.SpiDev()
-spi.open(0, 0)  # SPI bus 0, CS 0 (Change based on your setup)
-spi.max_speed_hz = 50000  # Adjust to your need
+spi.open(0, 0)  # Open SPI bus 0, device 0 (adjust according to your setup)
+spi.max_speed_hz = 100000  # Set SPI speed to 100 kHz (can be adjusted)
+spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
 
-# Function to write a byte to a specific register
-def ldc1101_write_byte(addr, data):
-    spi.xfer2([addr, data])
+# Function to read from the LDC1101 sensor
+def ldc1101_generic_read(register):
+    # Send the register address with the read bit (0x80)
+    response = spi.xfer2([register | LDC1101_SPI_READ, 0x00])
+    return response[1]  # Return the received byte
 
-# Function to read a byte from a specific register
-def ldc1101_read_byte(addr):
-    result = spi.xfer2([0x80 | addr, 0x00])
-    return result[1]
+# Function to write to the LDC1101 sensor
+def ldc1101_generic_write(register, data):
+    spi.xfer2([register, data])
 
-# Initialize LDC1101 by checking the chip ID and setting default values
-def ldc1101_init():
-    chip_id = ldc1101_read_byte(LDC1101_REG_CHIP_ID)
-    if chip_id != 0xD4:
-        return "DEVICE_ERROR"
-    
-    # Default Initialization
-    ldc1101_write_byte(LDC1101_REG_CFG_RP_MEASUREMENT_DYNAMIC_RANGE, 0x07)
-    ldc1101_write_byte(LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_1, 0x90)
-    ldc1101_write_byte(LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_2, 0xA0)
-    ldc1101_write_byte(LDC1101_REG_CFG_RP_L_CONVERSION_INTERVAL, 0x03)
-    ldc1101_write_byte(LDC1101_REG_CFG_ADDITIONAL_DEVICE, 0x00)
-    ldc1101_write_byte(LDC1101_REG_RP_THRESH_H_MSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_RP_THRESH_L_LSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_RP_THRESH_L_MSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_CFG_INTB_MODE, 0x00)
-    ldc1101_write_byte(LDC1101_REG_CFG_POWER_STATE, 0x01)  # Sleep mode
-    ldc1101_write_byte(LDC1101_REG_AMPLITUDE_CONTROL_REQUIREMENT, 0x00)
-    ldc1101_write_byte(LDC1101_REG_L_THRESH_HI_LSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_L_THRESH_HI_MSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_L_THRESH_LO_LSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_L_THRESH_LO_MSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_LHR_RCOUNT_LSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_LHR_RCOUNT_MSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_LHR_OFFSET_LSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_LHR_OFFSET_MSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_CFG_LHR, 0x00)
-    
-    time.sleep(0.1)
-    return "DEVICE_OK"
+# Function to set the LDC1101 to LHR mode
+def ldc1101_go_to_l_mode():
+    # Write to the Additional Device Configuration register to enable LHR mode
+    ldc1101_generic_write(LDC1101_REG_CFG_ADDITIONAL_DEVICE, LDC1101_ALT_CFG_L_OPTIMAL_ENABLE)
+    # Set the Amplitude Control register to continue conversions
+    ldc1101_generic_write(LDC1101_REG_AMPLITUDE_CONTROL_REQUIREMENT, LDC1101_CONTINUES_CONVERT)
 
-# Function to set the LHR mode
-def ldc1101_set_LHR_mode():
-    ldc1101_write_byte(LDC1101_REG_CFG_LHR, 0x80)  # Set LHR mode (0x80 for LHR mode)
-    time.sleep(0.1)
+# Function to get L data from the LDC1101 sensor
+def ldc1101_get_l_data():
+    msb = ldc1101_generic_read(LDC1101_REG_L_DATA_MSB)
+    lsb = ldc1101_generic_read(LDC1101_REG_L_DATA_LSB)
 
-# Function to read inductance data in LHR mode
-def ldc1101_read_inductance_LHR():
-    # Ensure LHR mode is enabled
-    ldc1101_set_LHR_mode()
-    
-    # Read the LHR data registers
-    lhr_data_lsb = ldc1101_read_byte(LDC1101_REG_LHR_DATA_LSB)
-    lhr_data_mid = ldc1101_read_byte(LDC1101_REG_LHR_DATA_MID)
-    lhr_data_msb = ldc1101_read_byte(LDC1101_REG_LHR_DATA_MSB)
-    
-    # Combine the bytes into the inductance value
-    inductance_value = (lhr_data_msb << 16) | (lhr_data_mid << 8) | lhr_data_lsb
-    
-    # Return the inductance value
-    return inductance_value
+    # Combine the MSB and LSB to form a 16-bit value
+    l_data = (msb << 8) | lsb
+    return l_data
 
-# Example Usage
-init_status = ldc1101_init()
-print(f"Initialization Status: {init_status}")
+# Set the sensor to LHR mode before reading data
+ldc1101_go_to_l_mode()
 
-# Read inductance value in LHR mode
-inductance_value = ldc1101_read_inductance_LHR()
-print(f"Inductance Value (in LHR mode): {inductance_value}")
+# Read L data from the sensor
+l_data = ldc1101_get_l_data()
+print(f"L data: {l_data}")
+
+# Close the SPI connection
+spi.close()
