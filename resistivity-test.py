@@ -1,42 +1,49 @@
-import spidev
 import time
+import spidev
 
-# Define SPI parameters
-SPI_BUS = 0
-SPI_DEVICE = 0
-SPI_SPEED = 10000  # 10 kHz for safe timing
-SPI_MODE = 0
-SPI_BITS = 8
-
-# Initialize SPI
+# Initialize SPI interface
 spi = spidev.SpiDev()
-spi.open(SPI_BUS, SPI_DEVICE)
-spi.max_speed_hz = SPI_SPEED
-spi.mode = SPI_MODE
-spi.bits_per_word = SPI_BITS
+spi.open(0, 0)  # Bus 0, Device 0
+spi.max_speed_hz = 1000000  # 1 MHz SPI clock speed
 
-# Function to read data from LDC1101 register
+# Function to write a value to a register
+def write_register(register, value):
+    spi.xfer2([register, value])
+
+# Function to read a value from a register
 def read_register(register):
-    response = spi.xfer2([register | 0x80, 0x00])  # 0x80 enables read
+    response = spi.xfer2([register, 0x00])
     return response[1]
 
-# Step 1: Delay after power-up to allow initialization (0.8 ms)
-time.sleep(0.001)  # Wait for 1 ms to ensure proper initialization
+# Initialize necessary registers
+def initialize_registers():
+    # Set LHR_CONFIG to 0x00 to reset configuration
+    write_register(0x34, 0x00)  # LHR_CONFIG reset
 
-# Step 2: Read and print the values of all registers
-all_registers = [
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x0B, 0x0C, 
-    0x34, 0x30, 0x31, 0x32, 0x33, 0x3B, 0x38, 
-    0x39, 0x3A, 0x0A, 0x16, 0x17, 0x18, 0x19, 
-    0x20, 0x21, 0x22, 0x23, 0x24, 0x05, 0x0A, 0x0F, 
-    0x10, 0x11, 0x12, 0x13, 0x14, 0x15
-]
+    # Wait for a while to ensure settings take effect
+    time.sleep(0.1)
 
-print("Reading all registers...")
+    # Check if LHR_CONFIG is set to 0x00
+    lhr_config = read_register(0x34)
+    print(f"LHR_CONFIG (0x34): {hex(lhr_config)}")
 
-for reg in all_registers:
-    value = read_register(reg)
-    print(f"Register 0x{reg:02X}: 0x{value:02X}")
+    # Set LHR_CONFIG to 0x01 for enabling high-resolution L measurement
+    write_register(0x34, 0x01)
+    
+    # Wait again for the configuration to take effect
+    time.sleep(0.1)
 
-# Step 3: Close SPI connection
-spi.close()
+    # Check if the LHR_CONFIG is properly set to 0x01
+    lhr_config = read_register(0x34)
+    print(f"LHR_CONFIG (0x34) after setting: {hex(lhr_config)}")
+
+# Function to read all registers for debugging
+def read_all_registers():
+    print("Reading all registers:")
+    for reg in range(0x00, 0x40):  # Checking a range of registers
+        value = read_register(reg)
+        print(f"Register {hex(reg)}: {hex(value)}")
+
+# Run the initialization and register reading functions
+initialize_registers()
+read_all_registers()
