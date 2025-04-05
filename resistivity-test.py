@@ -41,13 +41,18 @@ time.sleep(0.01)
 
 # Step 5: Configure High Resolution L (LHR) Mode
 write_register(0x34, 0x01)  # Enable High-Resolution L Mode (LHR_CONFIG)
-time.sleep(0.01)  # Allow time for configuration to take effect
+time.sleep(0.01)
 
-# Step 6: Start LHR conversion
+# Step 6: Configure internal time constants (TC1 and TC2)
+write_register(0x02, 0x90)  # Configure TC1
+write_register(0x03, 0xA0)  # Configure TC2
+time.sleep(0.01)
+
+# Step 7: Start LHR conversion
 write_register(0x0B, 0x01)  # Ensure the sensor is in active mode
-time.sleep(0.04)  # Wait for wake-up time
+time.sleep(0.04)  # Allow time for wake-up
 
-# Step 7: Wait for LHR measurement to complete (check status)
+# Step 8: Wait for LHR measurement to complete (check status)
 timeout = 10  # Set a timeout limit (in seconds)
 start_time = time.time()
 
@@ -59,9 +64,9 @@ while True:
     elif time.time() - start_time > timeout:
         print("Timeout reached, measurement not complete.")
         break
-    time.sleep(0.1)  # Wait before checking status again (increased check interval)
+    time.sleep(0.1)  # Wait before checking status again
 
-# Step 8: Read LHR conversion data
+# Step 9: Read LHR conversion data
 lhr_data_lsb = read_register(0x38)
 lhr_data_mid = read_register(0x39)
 lhr_data_msb = read_register(0x3A)
@@ -70,5 +75,5 @@ lhr_data_msb = read_register(0x3A)
 lhr_data = (lhr_data_msb << 16) | (lhr_data_mid << 8) | lhr_data_lsb
 print(f"High-Resolution L Inductance Data: 0x{lhr_data:06X}")
 
-# Step 9: Close SPI connection
+# Step 10: Close SPI connection
 spi.close()
