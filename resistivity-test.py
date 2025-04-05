@@ -10,21 +10,33 @@ spi.mode = 0b00  # SPI mode 0
 # LDC1101 Power Mode Command
 ACTIVE_MODE_CMD = 0x00  # Command to set Active mode
 
+# Power Control Register address
+POWER_MODE_REGISTER = 0x01
+
 def set_power_mode(mode):
     """
     Set the LDC1101 power mode.
     :param mode: Power mode (0x00 for Active mode).
     """
     # Send the command to set the power mode (register 0x01 for power control)
-    power_mode_register = 0x01  # Register for power control
-    response = spi.xfer2([power_mode_register, mode])
+    response = spi.xfer2([POWER_MODE_REGISTER, mode])
     time.sleep(0.1)  # Wait for the mode to take effect
-
-    # Optionally, read back the register to confirm it is in active mode
     return response
 
-# Set the LDC1101 to Active mode
-response = set_power_mode(ACTIVE_MODE_CMD)
+def read_status_register():
+    """
+    Read the status register (0x00) to confirm the current mode.
+    """
+    status_register = 0x00  # Status register address
+    status = spi.xfer2([status_register, 0x00])  # Send dummy byte to read
+    return status
 
-# Print the response to confirm the mode change
-print("Response:", response)
+# Set the LDC1101 to Active mode
+set_power_mode(ACTIVE_MODE_CMD)
+
+# Wait briefly to ensure mode change
+time.sleep(0.5)
+
+# Read and print the status register to verify the mode
+status = read_status_register()
+print("Status Register (after mode change):", status)
