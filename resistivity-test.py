@@ -1,34 +1,30 @@
 import spidev
 import time
 
-# Initialize SPI
+# SPI setup
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Open SPI bus 0, device 0 (CS pin is 0 by default)
-spi.max_speed_hz = 50000  # Set SPI speed (adjust as needed)
-spi.mode = 0b00  # SPI Mode 0 (CPOL = 0, CPHA = 0)
+spi.open(0, 0)  # Open SPI bus 0, device 0 (CE0)
+spi.max_speed_hz = 50000  # Set SPI speed (adjust if needed)
+spi.mode = 0b00  # SPI mode 0
 
-def ldc1101_getRPData():
-    """Reads RP data from the LDC1101."""
-    # Send the read command for RP data (replace with your actual command)
-    response = spi.xfer2([0x10, 0x00, 0x00])  # Replace 0x10 with actual command to read RP data
-    rp_data = (response[1] << 8) | response[2]  # Assuming the response is 16-bit
-    return rp_data
+# LDC1101 Power Mode Command
+ACTIVE_MODE_CMD = 0x00  # Command to set Active mode
 
-def print_log(message):
-    """Simulates logging the message to a console."""
-    print(message)
+def set_power_mode(mode):
+    """
+    Set the LDC1101 power mode.
+    :param mode: Power mode (0x00 for Active mode).
+    """
+    # Send the command to set the power mode (register 0x01 for power control)
+    power_mode_register = 0x01  # Register for power control
+    response = spi.xfer2([power_mode_register, mode])
+    time.sleep(0.1)  # Wait for the mode to take effect
 
-def applicationTask():
-    """Main application loop to read and log RP data."""
-    while True:
-        RP_Data = ldc1101_getRPData()  # Get RP data from LDC1101
-        demoText = str(RP_Data)  # Convert RP data to string
-        
-        # Log the data
-        print_log(f"Inductive Linear Position: {demoText}")
-        
-        # Delay to simulate Delay_100ms()
-        time.sleep(0.1)  # 100ms delay
+    # Optionally, read back the register to confirm it is in active mode
+    return response
 
-# Start the task loop
-applicationTask()
+# Set the LDC1101 to Active mode
+response = set_power_mode(ACTIVE_MODE_CMD)
+
+# Print the response to confirm the mode change
+print("Response:", response)
