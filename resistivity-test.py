@@ -1,14 +1,14 @@
 import spidev
 import time
 
-# Initialize SPI
+# SPI setup
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Bus 0, CE0 (Chip Select 0)
-spi.max_speed_hz = 500000  # 500kHz is safe
+spi.open(0, 0)  # Bus 0, CE0
+spi.max_speed_hz = 500000
 spi.mode = 0b00
 
-# LDC1101 Register Addresses
-REG_MODE_CONFIG      = 0x01
+# LDC1101 register addresses
+REG_START_CONFIG     = 0x01
 REG_RCOUNT_LSB       = 0x08
 REG_RCOUNT_MSB       = 0x09
 REG_SETTLECOUNT_LSB  = 0x10
@@ -20,40 +20,39 @@ REG_CONFIG           = 0x1A
 REG_RP_MSB           = 0x20
 REG_RP_LSB           = 0x21
 
-def write_register(register, value):
-    spi.xfer2([register & 0x7F, value])  # MSB = 0 for write
+def write_register(reg, value):
+    spi.xfer2([reg & 0x7F, value])  # MSB=0 for write
 
-def read_register(register):
-    result = spi.xfer2([0x80 | register, 0x00])  # MSB = 1 for read
-    return result[1]
+def read_register(reg):
+    return spi.xfer2([reg | 0x80, 0x00])[1]  # MSB=1 for read
 
 def init_ldc1101():
-    # Put in Standby mode
-    write_register(REG_MODE_CONFIG, 0x01)
+    # Put in standby first (optional safety)
+    write_register(REG_START_CONFIG, 0x01)
     time.sleep(0.1)
 
-    # Set RCOUNT
-    write_register(REG_RCOUNT_MSB, 0x02)
+    # RCOUNT = 0x0858 (longer conversion time = more stable results)
+    write_register(REG_RCOUNT_MSB, 0x08)
     write_register(REG_RCOUNT_LSB, 0x58)
 
-    # Set SETTLECOUNT
+    # SETTLECOUNT = 0x000A (let LC circuit stabilize)
     write_register(REG_SETTLECOUNT_MSB, 0x00)
     write_register(REG_SETTLECOUNT_LSB, 0x0A)
 
-    # Clock Dividers
+    # CLOCK_DIVIDERS = 0x00 (default)
     write_register(REG_CLOCK_DIVIDERS, 0x00)
 
-    # Set RP+L mode
+    # MUX_CONFIG = 0x00 → RP+L mode
     write_register(REG_MUX_CONFIG, 0x00)
 
-    # Drive current
-    write_register(REG_DRIVE_CURRENT, 0xF4)
+    # DRIVE_CURRENT = 0xC0 (moderate drive current)
+    write_register(REG_DRIVE_CURRENT, 0xC0)
 
-    # CONFIG (optional - default settings are usually fine)
+    # CONFIG = 0x00 (default)
     write_register(REG_CONFIG, 0x00)
 
-    # Set to ACTIVE mode
-    write_register(REG_MODE_CONFIG, 0x02)
+    # START_CONFIG = 0x00 → Active mode, default response time, internal clock
+    write_register(REG_START_CONFIG, 0x00)
     time.sleep(0.1)
 
 def read_rp():
@@ -61,9 +60,9 @@ def read_rp():
     lsb = read_register(REG_RP_LSB)
     return (msb << 8) | lsb
 
-# --- Main Execution ---
+# Initialize and loop
 init_ldc1101()
-print("LDC1101 Initialized in RP+L Mode. Reading RP values:")
+print("LDC1101 initialized in Active RP+L mode. Reading RP values...")
 
 while True:
     rp = read_rp()
