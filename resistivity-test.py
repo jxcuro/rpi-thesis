@@ -1,65 +1,36 @@
-import time
-import RPi.GPIO as GPIO
 import spidev
+import time
 
-# Set the GPIO mode
-GPIO.setmode(GPIO.BCM)
-
-# Define the GPIO pin for CS (Chip Select)
-CS_PIN = 24
-
-# Set CS_PIN as an output pin
-GPIO.setup(CS_PIN, GPIO.OUT)
+# Define SPI parameters
+SPI_BUS = 0  # SPI Bus 0
+SPI_DEVICE = 0  # SPI CE0 pin (CE0 corresponds to GPIO8, which is often used for SPI)
+SPI_SPEED = 50000  # SPI speed in Hz (you can adjust this)
+SPI_MODE = 0  # SPI Mode 0 (CPOL = 0, CPHA = 0)
+SPI_BITS = 8  # 8-bit data frames
 
 # Initialize SPI
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Bus 0, Device 0 (CE0)
-spi.max_speed_hz = 1000000  # 1 MHz for example, adjust if needed
+spi.open(SPI_BUS, SPI_DEVICE)  # Open SPI bus and device
+spi.max_speed_hz = SPI_SPEED
+spi.mode = SPI_MODE
+spi.bits_per_word = SPI_BITS
 
-# Function to write to the LDC1101
-def write_ldc1101_register(register_address, data):
-    # Set CS low to start the communication
-    GPIO.output(CS_PIN, GPIO.LOW)
-    
-    # Send register address and data (write mode: no 0x80 bit)
-    spi.xfer2([register_address, data])
-    
-    # Set CS high to end the communication
-    GPIO.output(CS_PIN, GPIO.HIGH)
+# Function to read data from LDC1101 register
+def read_register(register):
+    # Send register address with read bit (MSB set to 1)
+    # Format: [register address, 0x00] to receive data
+    response = spi.xfer2([register | 0x80, 0x00])  # 0x80 enables read (MSB set to 1)
+    return response[1]  # Return the data byte received
 
-# Function to read from the LDC1101
-def read_ldc1101_register(register_address):
-    # Set CS low to start the communication
-    GPIO.output(CS_PIN, GPIO.LOW)
-    
-    # Send register address with 0x80 bit to indicate a read
-    response = spi.xfer2([register_address | 0x80, 0x00])
-    
-    # Set CS high to end the communication
-    GPIO.output(CS_PIN, GPIO.HIGH)
+# Debug: Read all registers (assuming LDC1101 has 12-bit registers)
+# Replace with the actual register addresses of your LDC1101
+registers = [0x00, 0x01, 0x02, 0x03]  # List of registers to check (just an example)
 
-    return response
+print("LDC1101 Register Debugging:")
+for reg in registers:
+    print(f"Reading register 0x{reg:02X}...")
+    reg_value = read_register(reg)
+    print(f"Register 0x{reg:02X} Value: 0x{reg_value:02X}")
 
-# Test Writing to Register 0x00 and Reading It Back
-try:
-    test_value = 0x42  # Example test value to write
-    register = 0x00  # Example register address for testing
-
-    while True:
-        write_ldc1101_register(register, test_value)  # Write test value to register
-        print(f"Written {hex(test_value)} to register {hex(register)}")
-
-        response = read_ldc1101_register(register)  # Read back from register
-        print(f"Read {response} from register {hex(register)}")
-
-        if response != [test_value]:
-            print(f"Error: Response {response} doesn't match written value!")
-        
-        time.sleep(1)  # Sleep for a second between tests
-
-except KeyboardInterrupt:
-    print("Exiting program.")
-finally:
-    # Clean up GPIO and close SPI
-    GPIO.cleanup()
-    spi.close()
+# Close SPI connection
+spi.close()
