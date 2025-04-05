@@ -30,7 +30,7 @@ def ldc1101_init():
     ldc1101_setPowerMode('active')
     
     # Verify if it's in active mode
-    check_active_mode()
+    ldc1101_checkStatus()
     
     time.sleep(0.1)  # Allow the sensor some time to initialize
 
