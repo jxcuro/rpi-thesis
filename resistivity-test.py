@@ -15,44 +15,58 @@ spi.max_speed_hz = SPI_SPEED
 spi.mode = SPI_MODE
 spi.bits_per_word = SPI_BITS
 
-# Function to write data to LDC1101 register
-def write_register(register, value):
-    # The first bit of the register address should be 0 for write
-    # Register with write operation (first bit 0)
-    response = spi.xfer2([register & 0x7F, value])  # 0x7F disables read operation
-    print(f"Writing to 0x{register:02X}: 0x{value:02X}, Response: 0x{response[1]:02X}")
-
 # Function to read data from LDC1101 register
 def read_register(register):
-    # The first bit of the register address should be 1 for read
-    response = spi.xfer2([register | 0x80, 0x00])  # 0x80 enables read (first bit 1)
+    # Set the first bit (MSB) to 1 for reading data
+    response = spi.xfer2([register | 0x80, 0x00])  # 0x80 enables read
     print(f"Read from 0x{register:02X}: 0x{response[1]:02X}")
     return response[1]
 
-# Step 1: Delay after power-up to allow initialization (0.8 ms)
-time.sleep(0.001)  # Wait for 1 ms to ensure proper initialization
+# Function to write data to LDC1101 register
+def write_register(register, value):
+    # Set the first bit (MSB) to 0 for writing data
+    response = spi.xfer2([register & 0x7F, value])  # 0x7F disables read operation
+    print(f"Writing to 0x{register:02X}: 0x{value:02X}, Response: 0x{response[1]:02X}")
 
-# Step 2: Write to START_CONFIG (0x0B) to set it to active mode (0x01)
-write_register(0x0B, 0x01)  # Active Mode (0x01)
-time.sleep(0.01)  # Ensure the sensor is properly awake
+# Function to configure the LDC1101 sensor
+def configure_ldc1101():
+    # Step 1: Delay after power-up to allow initialization (0.8 ms)
+    time.sleep(0.001)  # Wait for 1 ms to ensure proper initialization
 
-# Step 3: Write to DIG_CONFIG (0x04) to configure RP+L conversion interval
-write_register(0x04, 0x03)  # RP+L conversion interval setting
-time.sleep(0.01)  # Give time for the configuration to take effect
+    # Step 2: Write to START_CONFIG (0x0B) to set it to active mode (0x01)
+    write_register(0x0B, 0x01)  # Active Mode (0x01)
+    time.sleep(0.01)  # Ensure the sensor is properly awake
 
-# Step 4: Write to RP_SET (0x01) to configure measurement dynamic range
-write_register(0x01, 0x07)  # Example setting for RP_SET
-time.sleep(0.01)  # Ensure proper setting time
+    # Step 3: Write to DIG_CONFIG (0x04) to configure RP+L conversion interval
+    write_register(0x04, 0xE7)  # RP+L conversion interval setting (from MSP430 code)
+    time.sleep(0.01)  # Give time for the configuration to take effect
 
-# Verify the changes
-start_config_value = read_register(0x0B)
-dig_config_value = read_register(0x04)
-rp_set_value = read_register(0x01)
+    # Step 4: Write to RP_SET (0x01) to configure measurement dynamic range
+    write_register(0x01, 0x07)  # Example setting for RP_SET
+    time.sleep(0.01)  # Ensure proper setting time
 
-# Print the results
-print(f"START_CONFIG (0x0B) Value: 0x{start_config_value:02X}")
-print(f"DIG_CONFIG (0x04) Value: 0x{dig_config_value:02X}")
-print(f"RP_SET (0x01) Value: 0x{rp_set_value:02X}")
+    # Step 5: Configure additional settings
+    write_register(0x30, 0x4A)  # Config from MSP430 code
+    write_register(0x31, 0x01)  # Config from MSP430 code
+
+    # Step 6: Request LHR data (this might be a placeholder command)
+    write_register(0xB8, 0x00)  # Command to request MISO LHR data (from MSP430 code)
+
+    # Step 7: Return to conversion mode
+    write_register(0x0B, 0x00)  # Return to conversion mode
+
+# Function to verify configuration
+def verify_configuration():
+    start_config_value = read_register(0x0B)
+    dig_config_value = read_register(0x04)
+    rp_set_value = read_register(0x01)
+    print(f"START_CONFIG (0x0B) Value: 0x{start_config_value:02X}")
+    print(f"DIG_CONFIG (0x04) Value: 0x{dig_config_value:02X}")
+    print(f"RP_SET (0x01) Value: 0x{rp_set_value:02X}")
+
+# Run the configuration and verify it
+configure_ldc1101()
+verify_configuration()
 
 # Close SPI connection
 spi.close()
