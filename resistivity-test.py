@@ -20,14 +20,10 @@ def read_register(register):
     response = spi.xfer2([register | 0x80, 0x00])  # 0x80 enables read
     return response[1]
 
-# Read the Status Register (0x01)
-status_value = read_register(0x01)
+# Read the Fault Detection Register (example: 0x04, check your datasheet)
+fault_value = read_register(0x04)  # Replace with actual fault register address
 
-# Check for error flags or status bits
-error_flags = status_value & 0x03  # Example: Check the lower 2 bits for error flags (adjust if needed)
-
-print(f"Status Register (0x01) Value: 0x{status_value:02X}")
-print(f"Error Flags (lower 2 bits): 0x{error_flags:02X}")
+print(f"Fault Detection Register (0x04) Value: 0x{fault_value:02X}")
 
 # Close SPI connection
 spi.close()
