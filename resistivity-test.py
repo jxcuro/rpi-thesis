@@ -1,54 +1,72 @@
-import time
 import spidev
+import time
 
-# Constants for LDC1101 Register Addresses and Configuration
-LDC1101_REG_CFG_LHR = 0x00   # Replace with the correct register address for LHR configuration
-LDC1101_REG_L_DATA_MSB = 0x01  # Replace with actual register address for L data MSB
-LDC1101_REG_L_DATA_LSB = 0x02  # Replace with actual register address for L data LSB
-LDC1101_FUNC_MODE_ACTIVE_CONVERSION_MODE = 0x01  # Example value
-LDC1101_FUNC_MODE_SLEEP_MODE = 0x00  # Example value
+# Constants
+LDC1101_DUMMY = 0x00
+LDC1101_SPI_READ = 0x80
 
-# Initialize SPI
-spi = spidev.SpiDev()
-spi.open(0, 0)  # Open SPI device 0, CS 0
-spi.max_speed_hz = 50000
-spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
+# Register addresses
+REG_PWRCONFIG = 0x1F
+REG_RP_L_MEASUREMENT_CONFIG = 0x1E
+REG_LHR_CONFIG = 0x1D
+REG_STATUS = 0x20
+REG_LHR_DATA_MSB = 0x23
+REG_LHR_DATA_MID = 0x24
+REG_LHR_DATA_LSB = 0x25
 
-# Function to write to a register on the LDC1101
-def write_register(register, value):
-    data = [register, value]
-    spi.xfer2(data)
+# Config values
+MODE_ACTIVE_CONVERSION = 0x01
+ALT_CONFIG_LHR = 0x30       # Enable LHR mode
+LHR_CONV_MODE_CONTINUOUS = 0x20
 
-# Function to read from a register on the LDC1101
-def read_register(register):
-    data = [register | 0x80, 0x00]  # Read operation: setting the MSB of the register address
-    response = spi.xfer2(data)
-    return response[1]  # Return the read value
+# Sensor constants (adjust based on your hardware setup)
+F_CLKIN = 16000000  # External clock frequency (16 MHz typical)
+L_SENSOR = 10e-6    # Inductance of your sensor coil in Henries (example: 10uH)
 
-# Initialize LDC1101 for LHR Mode
-def initialize_ldc1101():
-    # Set up LHR mode (replace with appropriate register settings)
-    write_register(LDC1101_REG_CFG_LHR, 0x01)  # Example value for LHR mode
-    time.sleep(0.1)  # Wait for configuration to take effect
+class LDC1101:
+    def __init__(self, spi_bus=0, spi_device=0):
+        self.spi = spidev.SpiDev()
+        self.spi.open(spi_bus, spi_device)
+        self.spi.max_speed_hz = 100000
+        self.spi.mode = 0b00
 
-    # Set the sensor to active conversion mode
-    write_register(LDC1101_REG_CFG_LHR, LDC1101_FUNC_MODE_ACTIVE_CONVERSION_MODE)
-    time.sleep(0.1)
+    def write_register(self, reg, val):
+        self.spi.xfer2([reg, val])
 
-# Get L Data from LDC1101
-def get_l_data():
-    msb = read_register(LDC1101_REG_L_DATA_MSB)
-    lsb = read_register(LDC1101_REG_L_DATA_LSB)
-    l_data = (msb << 8) | lsb  # Combine MSB and LSB to get 16-bit data
-    return l_data
+    def read_register(self, reg):
+        return self.spi.xfer2([reg | LDC1101_SPI_READ, LDC1101_DUMMY])[1]
 
-# Main Function
-def main():
-    initialize_ldc1101()
-    while True:
-        l_data = get_l_data()
-        print(f"L Data: {l_data}")
-        time.sleep(1)  # Wait before reading again
+    def read_lhr_data(self):
+        msb = self.read_register(REG_LHR_DATA_MSB)
+        mid = self.read_register(REG_LHR_DATA_MID)
+        lsb = self.read_register(REG_LHR_DATA_LSB)
+        raw = (msb << 16) | (mid << 8) | lsb
+        return raw & 0xFFFFFF
 
-if __name__ == "__main__":
-    main()
+    def configure_lhr_mode(self):
+        self.write_register(REG_RP_L_MEASUREMENT_CONFIG, ALT_CONFIG_LHR)
+        self.write_register(REG_LHR_CONFIG, LHR_CONV_MODE_CONTINUOUS)
+        self.write_register(REG_PWRCONFIG, MODE_ACTIVE_CONVERSION)
+        time.sleep(0.1)
+
+    def calculate_inductance(self, lhr_data):
+        """
+        Uses formula from TI's LDC1101 datasheet for LHR mode:
+        f_sensor = (LHR_data * f_CLKIN) / 2^24
+        L = 1 / (4 * π² * f_sensor² * C)
+        Since C is constant and unknown, usually this is used for relative changes.
+        """
+        f_sensor = (lhr_data * F_CLKIN) / (2**24)
+        # For absolute inductance, need capacitor value.
+        # If you're measuring change, just return f_sensor or lhr_data.
+        return f_sensor
+
+# Usage
+ldc = LDC1101(spi_bus=0, spi_device=0)
+ldc.configure_lhr_mode()
+
+while True:
+    lhr_raw = ldc.read_lhr_data()
+    f_sensor = ldc.calculate_inductance(lhr_raw)
+    print(f"LHR raw: {lhr_raw}, Sensor Frequency: {f_sensor:.2f} Hz")
+    time.sleep(0.5)
