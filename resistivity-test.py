@@ -1,23 +1,62 @@
 import spidev
 import time
 
-# Create an SPI object
+# SPI setup
 spi = spidev.SpiDev()
+spi.open(0, 0)  # SPI bus 0, CS0 (use 0,1 if on CE1)
+spi.max_speed_hz = 1000000
+spi.mode = 1  # SPI mode 1 (CPOL=0, CPHA=1)
 
-# Open SPI bus 0, device 0 (you can also try device 1 if this doesn't work)
-spi.open(0, 0)
+# Register addresses
+RP_MSB_REG      = 0x20
+RP_LSB_REG      = 0x21
+L_MSB_REG       = 0x22
+L_LSB_REG       = 0x23
+STATUS_REG      = 0x0B
+MODE_CONFIG_REG = 0x1D
+POWER_CONFIG    = 0x1C
 
-# Set SPI speed and mode
-spi.max_speed_hz = 500000  # 500kHz is a safe speed for testing
-spi.mode = 0b00  # SPI Mode 0
+# SPI register read/write
+def write_register(reg, value):
+    spi.xfer2([reg & 0x7F, value])  # MSB = 0 for write
 
-# Try reading and writing a byte (e.g., 0x01)
-write_data = [0x01]
-read_data = spi.xfer2(write_data)
+def read_register(reg):
+    return spi.xfer2([reg | 0x80, 0x00])[1]  # MSB = 1 for read
 
-# Output the results
-print(f"Sent: {write_data}")
-print(f"Received: {read_data}")
+# Sensor initialization (mimics ldc1101_default_cfg)
+def ldc1101_init():
+    write_register(MODE_CONFIG_REG, 0x0C)  # Set to RP + L mode
+    write_register(POWER_CONFIG, 0x01)     # Set to Active Conversion mode
+    time.sleep(0.1)  # Allow sensor to stabilize
 
-# Close the SPI connection
-spi.close()
+# Read RP data (16-bit)
+def read_rp_data():
+    msb = read_register(RP_MSB_REG)
+    lsb = read_register(RP_LSB_REG)
+    return (msb << 8) | lsb
+
+# Read L data (16-bit)
+def read_l_data():
+    msb = read_register(L_MSB_REG)
+    lsb = read_register(L_LSB_REG)
+    return (msb << 8) | lsb
+
+# Wait until data is ready
+def wait_for_data_ready():
+    while not (read_register(STATUS_REG) & 0x01):  # Check DATA_READY bit
+        time.sleep(0.005)
+
+# Main loop
+try:
+    ldc1101_init()
+    print("Reading RP and L values from LDC1101...")
+    while True:
+        wait_for_data_ready()
+        rp = read_rp_data()
+        l = read_l_data()
+        print(f"RP: {rp:5d}    L: {l:5d}")
+        time.sleep(0.1)
+
+except KeyboardInterrupt:
+    print("\nExiting...")
+    spi.close()
