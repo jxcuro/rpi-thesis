@@ -19,17 +19,14 @@ REG_DRIVE_CURRENT    = 0x1C
 REG_CONFIG           = 0x1A
 REG_RP_MSB           = 0x20
 REG_RP_LSB           = 0x21
-REG_STATUS           = 0x0B  # Status Register (important for debugging)
 
-# SPI write function (send data to the LDC1101)
 def write_register(register, value):
-    print(f"Writing to Register 0x{register:02X} Value 0x{value:02X}")
+    """Write value to register."""
     spi.xfer2([register & 0x7F, value])  # MSB = 0 for write
 
-# SPI read function (read data from LDC1101)
 def read_register(register):
+    """Read value from register."""
     result = spi.xfer2([0x80 | register, 0x00])  # MSB = 1 for read
-    print(f"Reading Register 0x{register:02X}, Received: 0x{result[1]:02X}")
     return result[1]
 
 def init_ldc1101():
@@ -40,13 +37,13 @@ def init_ldc1101():
     write_register(REG_MODE_CONFIG, 0x01)
     time.sleep(0.1)
     
-    # Set RCOUNT (set for medium range measurement)
-    write_register(REG_RCOUNT_MSB, 0x02)
-    write_register(REG_RCOUNT_LSB, 0x58)
+    # Increase RCOUNT for better measurement sensitivity
+    write_register(REG_RCOUNT_MSB, 0x05)  # Increase RCOUNT to higher value (0x05)
+    write_register(REG_RCOUNT_LSB, 0xF4)  # Increase RCOUNT to higher value (0xF4)
 
-    # Set SETTLECOUNT (set for moderate settling time)
+    # Increase SETTLECOUNT for better stabilization
     write_register(REG_SETTLECOUNT_MSB, 0x00)
-    write_register(REG_SETTLECOUNT_LSB, 0x0A)
+    write_register(REG_SETTLECOUNT_LSB, 0x20)  # Increase settling time
 
     # Clock Dividers (optional, adjust if necessary)
     write_register(REG_CLOCK_DIVIDERS, 0x00)
@@ -67,36 +64,27 @@ def init_ldc1101():
     print("LDC1101 Initialized in ACTIVE mode.")
 
 def read_rp():
-    """Read RP (Resistive Position) from LDC1101"""
+    """Read the RP value (Inductive position)."""
     msb = read_register(REG_RP_MSB)
     lsb = read_register(REG_RP_LSB)
-    rp = (msb << 8) | lsb
-    return rp
+    return (msb << 8) | lsb
 
-def read_status():
-    """Read the STATUS register to check for errors or status flags."""
-    status = read_register(REG_STATUS)
-    return status
+def check_registers():
+    """Check if registers are being updated."""
+    for reg in [REG_MODE_CONFIG, REG_RCOUNT_MSB, REG_RCOUNT_LSB, REG_SETTLECOUNT_MSB, REG_SETTLECOUNT_LSB, REG_RP_MSB, REG_RP_LSB]:
+        value = read_register(reg)
+        print(f"Register {hex(reg)}: {hex(value)}")
 
-# Main Execution
+# --- Main Execution ---
 init_ldc1101()
-print("LDC1101 Initialized. Starting RP measurement...")
 
-# Run continuous reading and debug every few seconds
+# Check if registers are being updated
+check_registers()
+
+print("LDC1101 Initialized in ACTIVE mode. Reading RP values:")
+
 while True:
-    print("\n--- Reading Sensor ---")
-    # Check the STATUS register (important for debugging)
-    status = read_status()
-    print(f"STATUS Register (0x0B): {status}")
-
-    # Read the RP value (MSB + LSB combined)
     rp = read_rp()
     print(f"RP Measurement: {rp}")
-
-    # Check if RP value is stuck at 31744
-    if rp == 31744:
-        print("RP value is stuck. Possible sensor or environmental issue.")
-        print("Ensure that an inductive object is near the sensor.")
-
-    # Sleep for 2 seconds
-    time.sleep(2)
+    check_registers()  # Check registers again to see if they are updating
+    time.sleep(0.5)
