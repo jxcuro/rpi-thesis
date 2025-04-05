@@ -17,8 +17,8 @@ spi.bits_per_word = SPI_BITS
 
 # Function to write to a register
 def write_register(register, value):
-    # Send the register address and value to write
     spi.xfer2([register & 0x7F, value])  # Write to register (MSB 0 for write)
+    time.sleep(0.1)  # Add a small delay to allow the LDC1101 to process the write
 
 # Function to read data from LDC1101 register
 def read_register(register):
@@ -26,15 +26,12 @@ def read_register(register):
     return response[1]
 
 # Initialize LDC1101 (write values to necessary registers)
-# Replace with actual initialization register addresses and values for your sensor
-write_register(0x00, 0x01)  # Example initialization command
-write_register(0x01, 0x02)  # Another example initialization command
+write_register(0x02, 0x01)  # Example: Write to register 0x02 (LDC configuration)
+write_register(0x03, 0x02)  # Example: Write to register 0x03 (Channel data)
 
-time.sleep(0.1)  # Allow time for the initialization to complete
-
-# Debug: Read all registers
-registers = [0x00, 0x01, 0x02, 0x03]
-print("LDC1101 Register Debugging with Initialization:")
+# Debug: Read all registers (only valid ones based on datasheet)
+registers = [0x01, 0x02, 0x03]  # Replace with actual valid registers for LDC1101
+print("LDC1101 Register Debugging with Correct Register Addresses:")
 for reg in registers:
     reg_value = read_register(reg)
     print(f"Register 0x{reg:02X} Value: 0x{reg_value:02X}")
