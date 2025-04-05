@@ -41,17 +41,15 @@ time.sleep(0.01)  # Give time for the configuration to take effect
 write_register(0x01, 0x07)  # Example setting for RP_SET
 time.sleep(0.01)  # Ensure proper setting time
 
-# Step 5: Read Inductance (two-byte value)
-inductance_msb = read_register(0x12)  # Most Significant Byte of Inductance
-inductance_lsb = read_register(0x13)  # Least Significant Byte of Inductance
-inductance_value = (inductance_msb << 8) | inductance_lsb  # Combine MSB and LSB
-print(f"Inductance Value: {inductance_value}")
+# Verify the changes
+start_config_value = read_register(0x0B)
+dig_config_value = read_register(0x04)
+rp_set_value = read_register(0x01)
 
-# Step 6: Read Rp (two-byte value)
-rp_msb = read_register(0x14)  # Most Significant Byte of RP
-rp_lsb = read_register(0x15)  # Least Significant Byte of RP
-rp_value = (rp_msb << 8) | rp_lsb  # Combine MSB and LSB
-print(f"Rp Value: {rp_value}")
+# Print the results
+print(f"START_CONFIG (0x0B) Value: 0x{start_config_value:02X}")
+print(f"DIG_CONFIG (0x04) Value: 0x{dig_config_value:02X}")
+print(f"RP_SET (0x01) Value: 0x{rp_set_value:02X}")
 
 # Close SPI connection
 spi.close()
