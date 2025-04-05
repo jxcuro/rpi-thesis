@@ -1,61 +1,71 @@
-import RPi.GPIO as GPIO
 import spidev
 import time
 
-# SPI setup
+# Initialize SPI
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Open SPI bus 0, device 0 (CE0)
-spi.max_speed_hz = 10000  # Set SPI speed (adjust if needed)
-spi.mode = 0b00  # SPI mode 0
+spi.open(0, 0)  # Bus 0, CE0 (Chip Select 0)
+spi.max_speed_hz = 500000  # 500kHz is safe
+spi.mode = 0b00
 
-# Define GPIO pin for CS (chip select) to ensure it's low during communication
-CS_PIN = 24
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(CS_PIN, GPIO.OUT)
-GPIO.output(CS_PIN, GPIO.HIGH)
+# LDC1101 Register Addresses
+REG_MODE_CONFIG      = 0x01
+REG_RCOUNT_LSB       = 0x08
+REG_RCOUNT_MSB       = 0x09
+REG_SETTLECOUNT_LSB  = 0x10
+REG_SETTLECOUNT_MSB  = 0x11
+REG_CLOCK_DIVIDERS   = 0x1E
+REG_MUX_CONFIG       = 0x1B
+REG_DRIVE_CURRENT    = 0x1C
+REG_CONFIG           = 0x1A
+REG_RP_MSB           = 0x20
+REG_RP_LSB           = 0x21
 
-# LDC1101 Power Mode Command
-ACTIVE_MODE_CMD = 0x00  # Command to set Active mode
+def write_register(register, value):
+    spi.xfer2([register & 0x7F, value])  # MSB = 0 for write
 
-# Power Control Register address
-POWER_MODE_REGISTER = 0x01
+def read_register(register):
+    result = spi.xfer2([0x80 | register, 0x00])  # MSB = 1 for read
+    return result[1]
 
-def set_power_mode(mode):
-    """
-    Set the LDC1101 power mode.
-    :param mode: Power mode (0x00 for Active mode).
-    """
-    GPIO.output(CS_PIN, GPIO.LOW)  # Pull CS low to start communication
-    response = spi.xfer2([POWER_MODE_REGISTER, mode])
-    GPIO.output(CS_PIN, GPIO.HIGH)  # Pull CS high to end communication
-    time.sleep(0.1)  # Wait for the mode to take effect
-    return response
+def init_ldc1101():
+    # Put in Standby mode
+    write_register(REG_MODE_CONFIG, 0x01)
+    time.sleep(0.1)
 
-def read_status_register():
-    """
-    Read the status register (0x00) to confirm the current mode.
-    """
-    status_register = 0x00  # Status register address
-    GPIO.output(CS_PIN, GPIO.LOW)  # Pull CS low to start communication
-    status = spi.xfer2([status_register, 0x00])  # Send dummy byte to read
-    GPIO.output(CS_PIN, GPIO.HIGH)  # Pull CS high to end communication
-    return status
+    # Set RCOUNT
+    write_register(REG_RCOUNT_MSB, 0x02)
+    write_register(REG_RCOUNT_LSB, 0x58)
 
-# Reset LDC1101
-def reset_ldc1101():
-    GPIO.output(CS_PIN, GPIO.LOW)  # Pull CS low to start communication
-    spi.xfer2([0x03, 0x01])  # Send the reset command
-    GPIO.output(CS_PIN, GPIO.HIGH)  # Pull CS high to end communication
-    time.sleep(0.1)  # Wait for reset to take effect
+    # Set SETTLECOUNT
+    write_register(REG_SETTLECOUNT_MSB, 0x00)
+    write_register(REG_SETTLECOUNT_LSB, 0x0A)
 
-reset_ldc1101()  # Perform reset before setting power mode
+    # Clock Dividers
+    write_register(REG_CLOCK_DIVIDERS, 0x00)
 
-# Set the LDC1101 to Active mode
-set_power_mode(ACTIVE_MODE_CMD)
+    # Set RP+L mode
+    write_register(REG_MUX_CONFIG, 0x00)
 
-# Wait briefly to ensure mode change
-time.sleep(0.5)
+    # Drive current
+    write_register(REG_DRIVE_CURRENT, 0xF4)
 
-# Read and print the status register to verify the mode
-status = read_status_register()
-print("Status Register (after mode change):", status)
+    # CONFIG (optional - default settings are usually fine)
+    write_register(REG_CONFIG, 0x00)
+
+    # Set to ACTIVE mode
+    write_register(REG_MODE_CONFIG, 0x02)
+    time.sleep(0.1)
+
+def read_rp():
+    msb = read_register(REG_RP_MSB)
+    lsb = read_register(REG_RP_LSB)
+    return (msb << 8) | lsb
+
+# --- Main Execution ---
+init_ldc1101()
+print("LDC1101 Initialized in RP+L Mode. Reading RP values:")
+
+while True:
+    rp = read_rp()
+    print(f"RP Measurement: {rp}")
+    time.sleep(0.5)
