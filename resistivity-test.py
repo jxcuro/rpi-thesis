@@ -1,15 +1,7 @@
 import spidev
-import RPi.GPIO as GPIO
 import time
 
-# Define GPIO settings for Chip Select (CS)
-CS_PIN = 10  # GPIO10 (CE0)
-
-# SPI Settings
-SPI_CHANNEL = 0  # SPI Channel 0 (CE0)
-SPI_SPEED = 500000  # SPI Speed in Hz
-
-# Register Definitions
+# Constants for LDC1101 Registers (same as in C code)
 LDC1101_REG_CFG_RP_MEASUREMENT_DYNAMIC_RANGE = 0x01
 LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_1 = 0x02
 LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_2 = 0x03
@@ -43,36 +35,27 @@ LDC1101_REG_LHR_STATUS = 0x3B
 LDC1101_REG_DEVICE_RID_VALUE = 0x3E
 LDC1101_REG_CHIP_ID = 0x3F
 
-# Initialize SPI and GPIO
+# SPI Setup
 spi = spidev.SpiDev()
-spi.open(SPI_CHANNEL, 0)  # Open SPI channel 0 (CE0)
-spi.max_speed_hz = SPI_SPEED
-
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(CS_PIN, GPIO.OUT)
-GPIO.output(CS_PIN, GPIO.HIGH)  # Deactivate chip select initially
+spi.open(0, 0)  # SPI bus 0, CS 0 (Change based on your setup)
+spi.max_speed_hz = 50000  # Adjust to your need
 
 # Function to write a byte to a specific register
 def ldc1101_write_byte(addr, data):
-    GPIO.output(CS_PIN, GPIO.LOW)  # Activate chip select
-    spi.xfer([addr, data])  # Send register address and data
-    GPIO.output(CS_PIN, GPIO.HIGH)  # Deactivate chip select
+    spi.xfer2([addr, data])
 
 # Function to read a byte from a specific register
 def ldc1101_read_byte(addr):
-    GPIO.output(CS_PIN, GPIO.LOW)  # Activate chip select
-    response = spi.xfer([0x80 | addr, 0x00])  # Send register address with read flag
-    GPIO.output(CS_PIN, GPIO.HIGH)  # Deactivate chip select
-    return response[1]  # Return the received data
+    result = spi.xfer2([0x80 | addr, 0x00])
+    return result[1]
 
-# Function to initialize the LDC1101 sensor
+# Initialize LDC1101 by checking the chip ID and setting default values
 def ldc1101_init():
     chip_id = ldc1101_read_byte(LDC1101_REG_CHIP_ID)
-    if chip_id != 0xD4:  # Check chip ID
-        print(f"Error: Expected chip ID 0xD4, got 0x{chip_id:02X}")
-        return False
-
-    # Initialize registers with default values
+    if chip_id != 0xD4:
+        return "DEVICE_ERROR"
+    
+    # Default Initialization
     ldc1101_write_byte(LDC1101_REG_CFG_RP_MEASUREMENT_DYNAMIC_RANGE, 0x07)
     ldc1101_write_byte(LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_1, 0x90)
     ldc1101_write_byte(LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_2, 0xA0)
@@ -93,27 +76,27 @@ def ldc1101_init():
     ldc1101_write_byte(LDC1101_REG_LHR_OFFSET_LSB, 0x00)
     ldc1101_write_byte(LDC1101_REG_LHR_OFFSET_MSB, 0x00)
     ldc1101_write_byte(LDC1101_REG_CFG_LHR, 0x00)
+    
+    time.sleep(0.1)
+    return "DEVICE_OK"
 
-    time.sleep(0.1)  # Wait for sensor to stabilize
-    return True
-
-# Function to set the power mode of the sensor
+# Function to set the power mode
 def ldc1101_set_power_mode(mode):
     ldc1101_write_byte(LDC1101_REG_CFG_POWER_STATE, mode)
 
-# Function to switch to L Mode (L measurement mode)
+# Function to go to L mode
 def ldc1101_go_to_L_mode():
     ldc1101_write_byte(LDC1101_REG_CFG_ADDITIONAL_DEVICE, 0x01)
     ldc1101_write_byte(LDC1101_REG_AMPLITUDE_CONTROL_REQUIREMENT, 0x01)
 
-# Function to switch to RP Mode (RP measurement mode)
+# Function to go to RP mode
 def ldc1101_go_to_RP_mode():
     ldc1101_write_byte(LDC1101_REG_CFG_ADDITIONAL_DEVICE, 0x00)
     ldc1101_write_byte(LDC1101_REG_AMPLITUDE_CONTROL_REQUIREMENT, 0x00)
 
-# Main program
-if __name__ == "__main__":
-    if not ldc1101_init():
-        print("Failed to initialize LDC1101 sensor.")
-    else:
-        print("LDC1101 sensor initialized successfully.")
+# Example Usage
+init_status = ldc1101_init()
+print(f"Initialization Status: {init_status}")
+ldc1101_go_to_L_mode()
+time.sleep(1)
+ldc1101_go_to_RP_mode()
