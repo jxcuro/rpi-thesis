@@ -41,15 +41,25 @@ time.sleep(0.01)  # Give time for the configuration to take effect
 write_register(0x01, 0x07)  # Example setting for RP_SET
 time.sleep(0.01)  # Ensure proper setting time
 
-# Verify the changes
-start_config_value = read_register(0x0B)
-dig_config_value = read_register(0x04)
-rp_set_value = read_register(0x01)
+# Step 5: Configure High Resolution L (LHR) Mode
+write_register(0x34, 0x01)  # Enable High-Resolution L Mode (LHR_CONFIG)
 
-# Print the results
-print(f"START_CONFIG (0x0B) Value: 0x{start_config_value:02X}")
-print(f"DIG_CONFIG (0x04) Value: 0x{dig_config_value:02X}")
-print(f"RP_SET (0x01) Value: 0x{rp_set_value:02X}")
+# Step 6: Start LHR conversion by setting the appropriate control bits
+write_register(0x0B, 0x01)  # Ensure the sensor is in active mode for conversion
+time.sleep(0.04)  # Wait for wake-up time (0.04 ms)
 
-# Close SPI connection
+# Step 7: Read LHR conversion data
+lhr_data_lsb = read_register(0x38)
+lhr_data_mid = read_register(0x39)
+lhr_data_msb = read_register(0x3A)
+
+# Combine the data bytes into a 24-bit value (LHR result)
+lhr_data = (lhr_data_msb << 16) | (lhr_data_mid << 8) | lhr_data_lsb
+print(f"High-Resolution L Inductance Data: 0x{lhr_data:06X}")
+
+# Step 8: Check LHR measurement status
+lhr_status = read_register(0x3B)
+print(f"LHR Measurement Status: 0x{lhr_status:02X}")
+
+# Step 9: Close SPI connection
 spi.close()
