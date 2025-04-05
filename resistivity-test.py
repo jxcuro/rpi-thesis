@@ -20,14 +20,18 @@ def read_register(register):
     response = spi.xfer2([register | 0x80, 0x00])  # 0x80 enables read
     return response[1]
 
-# Read the Inductance Data Registers (L_DATA_LSB and L_DATA_MSB)
-l_data_lsb = read_register(0x23)  # L_DATA_LSB (low byte)
-l_data_msb = read_register(0x24)  # L_DATA_MSB (high byte)
+# List of registers to read (from datasheet)
+register_addresses = [
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 
+    0x0B, 0x0C, 0x16, 0x17, 0x18, 0x19, 0x20, 0x21, 0x22, 0x23, 
+    0x24, 0x30, 0x31, 0x32, 0x33, 0x34, 0x38, 0x39, 0x3A, 0x3B, 
+    0x3E, 0x3F
+]
 
-# Combine the two bytes to get the full inductance value
-inductance_value = (l_data_msb << 8) | l_data_lsb
-
-print(f"Inductance Value: {inductance_value}")
+# Read and print all registers
+for register in register_addresses:
+    value = read_register(register)
+    print(f"Register 0x{register:02X} Value: 0x{value:02X}")
 
 # Close SPI connection
 spi.close()
