@@ -29,19 +29,25 @@ def write_register(register, value):
 # Step 1: Delay after power-up to allow initialization (0.8 ms)
 time.sleep(0.001)  # Wait for 1 ms to ensure proper initialization
 
-# Step 2: Write to START_CONFIG (0x0B) to set it to active mode (0x01)
-write_register(0x0B, 0x01)  # Active Mode (0x01)
-time.sleep(0.01)  # Ensure the sensor is properly awake
+# Step 2: Write to START_CONFIG (0x0B)
+# Original value: 0x01 (Active Mode)
+write_register(0x0B, 0x02)  # Test writing a different mode
 
-# Step 3: Write to DIG_CONFIG (0x04) to configure RP+L conversion interval
-write_register(0x04, 0x03)  # RP+L conversion interval setting
-time.sleep(0.01)  # Give time for the configuration to take effect
+time.sleep(0.01)  # Give it time
 
-# Step 4: Write to RP_SET (0x01) to configure measurement dynamic range
-write_register(0x01, 0x07)  # Example setting for RP_SET
-time.sleep(0.01)  # Ensure proper setting time
+# Step 3: Write to DIG_CONFIG (0x04)
+# Original value: 0x03
+write_register(0x04, 0x05)  # Test writing a different conversion interval
 
-# Verify the changes
+time.sleep(0.01)
+
+# Step 4: Write to RP_SET (0x01)
+# Original value: 0x07
+write_register(0x01, 0x0A)  # Test writing a different dynamic range
+
+time.sleep(0.01)
+
+# Read back the values
 start_config_value = read_register(0x0B)
 dig_config_value = read_register(0x04)
 rp_set_value = read_register(0x01)
