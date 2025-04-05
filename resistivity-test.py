@@ -3,24 +3,43 @@ import time
 
 # Initialize SPI
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Bus 0, Device 0 (CE0)
-spi.max_speed_hz = 50000  # You can adjust this if needed
-spi.mode = 0b00  # SPI mode
+spi.open(0, 0)  # Bus 0, Device 0
+spi.max_speed_hz = 50000  # Lower SPI speed if needed
+spi.mode = 0b00
 
-def read_register(address):
-    """Reads a register from LDC1101 using SPI."""
-    # Adjust the address format (shift left and OR with read bit)
-    # The read bit (bit 0) must be set for a read operation (0x01)
-    address |= 0x01  # Set read bit
-    
-    # Send the address (read command) and a dummy byte (0x00)
-    response = spi.xfer2([address, 0x00])  # Send address and dummy data
-    return response[1]  # Return the received data
+# Function to write data to the LDC1101
+def write_register(register, value):
+    # Send register address with write command (register | 0x80) and value
+    spi.xfer2([register | 0x80, value])
 
+# Function to read data from a register
+def read_register(register):
+    # Send register address (no write command) and read the data
+    response = spi.xfer2([register, 0x00])
+    return response[1]
+
+# Function to initialize LDC1101
+def init_ldc1101():
+    # Example: Write configuration to Control Register (0x00)
+    # You can adjust these values as needed
+    write_register(0x00, 0x00)  # Reset to default state (example)
+    time.sleep(0.1)
+
+# Example to read ID register
 def read_chip_id():
-    """Reads the chip ID (register 0x3F) from LDC1101."""
-    chip_id = read_register(0x3F)
-    print(f"LDC1101 Chip ID Register (0x3F): 0x{chip_id:02X}")
+    # Read the chip ID register (0x3F)
+    return read_register(0x3F)
 
-# Read and print chip ID
-read_chip_id()
+# Initialize LDC1101
+init_ldc1101()
+
+# Read and print the chip ID
+chip_id = read_chip_id()
+print(f"LDC1101 Chip ID: {hex(chip_id)}")
+
+# Read other registers if needed
+# Example: Read the status register (0x08)
+status = read_register(0x08)
+print(f"Status Register: {hex(status)}")
+
+# Optionally, you can print other registers to verify communication
