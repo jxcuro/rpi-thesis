@@ -19,66 +19,90 @@ REG_DRIVE_CURRENT    = 0x1C
 REG_CONFIG           = 0x1A
 REG_RP_MSB           = 0x20
 REG_RP_LSB           = 0x21
+REG_STATUS           = 0x0B  # Status Register (important for debugging)
 
 def write_register(register, value):
-    """Writes a value to a specific register."""
     spi.xfer2([register & 0x7F, value])  # MSB = 0 for write
 
 def read_register(register):
-    """Reads the value from a specific register."""
     result = spi.xfer2([0x80 | register, 0x00])  # MSB = 1 for read
     return result[1]
 
 def init_ldc1101():
-    """Initializes the LDC1101 sensor in RP+L mode."""
+    """Initialize LDC1101 sensor in proper mode."""
+    print("Initializing LDC1101...")
     # Put in Standby mode
     write_register(REG_MODE_CONFIG, 0x01)
     time.sleep(0.1)
 
-    # Set RCOUNT
+    # Set RCOUNT (set for medium range measurement)
     write_register(REG_RCOUNT_MSB, 0x02)
     write_register(REG_RCOUNT_LSB, 0x58)
 
-    # Set SETTLECOUNT
+    # Set SETTLECOUNT (set for moderate settling time)
     write_register(REG_SETTLECOUNT_MSB, 0x00)
     write_register(REG_SETTLECOUNT_LSB, 0x0A)
 
-    # Clock Dividers
+    # Clock Dividers (optional, you can adjust if needed)
     write_register(REG_CLOCK_DIVIDERS, 0x00)
 
-    # Set RP+L mode
+    # Set RP+L mode (default)
     write_register(REG_MUX_CONFIG, 0x00)
 
-    # Drive current
+    # Drive current (set to max for good measurements)
     write_register(REG_DRIVE_CURRENT, 0xF4)
 
-    # CONFIG (optional - default settings are usually fine)
+    # CONFIG register (ensure default settings)
     write_register(REG_CONFIG, 0x00)
 
     # Set to ACTIVE mode
     write_register(REG_MODE_CONFIG, 0x02)
     time.sleep(0.1)
+    print("LDC1101 Initialized in ACTIVE mode.")
 
 def read_rp():
-    """Reads RP data from the sensor and returns it."""
+    """Read the RP (Resistive Position) data from LDC1101."""
     msb = read_register(REG_RP_MSB)
     lsb = read_register(REG_RP_LSB)
-    return (msb << 8) | lsb
+    rp = (msb << 8) | lsb
+    return rp
 
-def print_all_registers():
-    """Reads and prints all registers."""
-    for reg in range(0x00, 0x30):  # You can adjust the range to your needs
-        value = read_register(reg)
-        print(f"Register 0x{reg:02X}: {value}")
+def read_status():
+    """Check the STATUS register to look for errors or flags."""
+    status = read_register(REG_STATUS)
+    return status
 
-# --- Main Execution ---
-init_ldc1101()
-print("LDC1101 Initialized in RP+L Mode. Reading RP values:")
+def debug_sensor():
+    """Debug the sensor by reading its status and registers."""
+    print("Reading the STATUS register (0x0B)...")
+    status = read_status()
+    print(f"STATUS Register (0x0B): {status}")
 
-# Optional: print all registers to check the status
-print_all_registers()
+    print("Reading other registers...")
+    # Read and display important registers for debugging
+    mode = read_register(REG_MODE_CONFIG)
+    mux_config = read_register(REG_MUX_CONFIG)
+    print(f"MODE_CONFIG (0x01): {mode}")
+    print(f"MUX_CONFIG (0x1B): {mux_config}")
 
-while True:
+    # Check RP data (MSB + LSB)
     rp = read_rp()
     print(f"RP Measurement: {rp}")
-    time.sleep(1)  # Increase sleep time for more visible changes
+
+# Main Execution
+init_ldc1101()
+print("LDC1101 Initialized. Starting measurement...")
+
+# Run continuous reading and debug every few seconds
+while True:
+    debug_sensor()
+    rp = read_rp()
+    print(f"RP Measurement: {rp}")
+
+    # Check if RP value is stuck at 31744, indicating no change in the environment
+    if rp == 31744:
+        print("RP value is stuck. Possible sensor or environmental issue.")
+        print("Check if an inductive object is near the sensor.")
+    
+    # Read and log every 2 seconds
+    time.sleep(2)
