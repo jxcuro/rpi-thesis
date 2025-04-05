@@ -4,7 +4,7 @@ import time
 # Define SPI parameters
 SPI_BUS = 0  # SPI Bus 0
 SPI_DEVICE = 0  # SPI CE0 pin (CE0 corresponds to GPIO8, which is often used for SPI)
-SPI_SPEED = 50000  # SPI speed in Hz (you can adjust this)
+SPI_SPEED = 10000  # Lower SPI speed to 10,000 Hz
 SPI_MODE = 0  # SPI Mode 0 (CPOL = 0, CPHA = 0)
 SPI_BITS = 8  # 8-bit data frames
 
@@ -26,7 +26,7 @@ def read_register(register):
 # Replace with the actual register addresses of your LDC1101
 registers = [0x00, 0x01, 0x02, 0x03]  # List of registers to check (just an example)
 
-print("LDC1101 Register Debugging:")
+print("LDC1101 Register Debugging with Lower SPI Speed:")
 for reg in registers:
     print(f"Reading register 0x{reg:02X}...")
     reg_value = read_register(reg)
