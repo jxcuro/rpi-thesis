@@ -1,72 +1,53 @@
 import spidev
 import time
 
-# Define SPI parameters
-SPI_BUS = 0
-SPI_DEVICE = 0
-SPI_SPEED = 10000  # 10 kHz for safe timing
-SPI_MODE = 0
-SPI_BITS = 8
-
-# Initialize SPI
+# Initialize SPI communication
 spi = spidev.SpiDev()
-spi.open(SPI_BUS, SPI_DEVICE)
-spi.max_speed_hz = SPI_SPEED
-spi.mode = SPI_MODE
-spi.bits_per_word = SPI_BITS
+spi.open(0, 0)  # Open SPI bus 0, device 0 (CS pin)
+spi.max_speed_hz = 50000  # Set the SPI speed, adjust as needed
 
-# Function to read data from LDC1101 register
-def read_register(register):
-    # Set the first bit (MSB) to 1 for reading data
-    response = spi.xfer2([register | 0x80, 0x00])  # 0x80 enables read
-    print(f"Read from 0x{register:02X}: 0x{response[1]:02X}")
-    return response[1]
+# LDC1101 Register Addresses
+LDC1101_MODE_REG = 0x00  # Mode register (RP_SET, etc.)
+LDC1101_L_DATA_LSB = 0x23  # Lower 8 bits of inductance measurement result
+LDC1101_L_DATA_MSB = 0x24  # Upper 8 bits of inductance measurement result
 
-# Function to write data to LDC1101 register
-def write_register(register, value):
-    # Set the first bit (MSB) to 0 for writing data
-    response = spi.xfer2([register & 0x7F, value])  # 0x7F disables read operation
-    print(f"Writing to 0x{register:02X}: 0x{value:02X}, Response: 0x{response[1]:02X}")
+# Function to write to the LDC1101 register
+def write_register(reg, value):
+    # LSB and MSB are combined in one byte pair
+    value_bytes = [(value >> 8) & 0xFF, value & 0xFF]
+    spi.xfer([reg, value_bytes[0], value_bytes[1]])
 
-# Function to configure the LDC1101 sensor
-def configure_ldc1101():
-    # Step 1: Delay after power-up to allow initialization (0.8 ms)
-    time.sleep(0.001)  # Wait for 1 ms to ensure proper initialization
+# Function to read from the LDC1101 register
+def read_register(reg):
+    response = spi.xfer([reg, 0x00, 0x00])  # Send read command
+    return (response[1] << 8) | response[2]  # Combine MSB and LSB
 
-    # Step 2: Write to START_CONFIG (0x0B) to set it to active mode (0x01)
-    write_register(0x0B, 0x01)  # Active Mode (0x01)
-    time.sleep(0.01)  # Ensure the sensor is properly awake
+# Function to start a measurement and get the inductance value
+def get_inductance():
+    # Set the LDC1101 to LHR mode by writing the corresponding mode value
+    write_register(LDC1101_MODE_REG, 0x12)  # Set the correct mode for LHR
+    time.sleep(0.1)  # Wait for the sensor to stabilize
 
-    # Step 3: Write to DIG_CONFIG (0x04) to configure RP+L conversion interval
-    write_register(0x04, 0xE7)  # RP+L conversion interval setting (from MSP430 code)
-    time.sleep(0.01)  # Give time for the configuration to take effect
+    # Read the inductance measurement result from the registers
+    lsb = read_register(LDC1101_L_DATA_LSB)
+    msb = read_register(LDC1101_L_DATA_MSB)
+    
+    # Combine MSB and LSB to get the full 16-bit inductance value
+    inductance_raw = (msb << 8) | lsb
+    print(f"Raw Inductance Value: {inductance_raw}")
 
-    # Step 4: Write to RP_SET (0x01) to configure measurement dynamic range
-    write_register(0x01, 0x07)  # Example setting for RP_SET
-    time.sleep(0.01)  # Ensure proper setting time
+    # Convert raw value to inductance (in microhenries)
+    inductance_value = inductance_raw * 0.1  # Assuming scaling factor; adjust based on calibration
+    print(f"Inductance (uH): {inductance_value:.2f}")
 
-    # Step 5: Configure additional settings
-    write_register(0x30, 0x4A)  # Config from MSP430 code
-    write_register(0x31, 0x01)  # Config from MSP430 code
+    return inductance_value
 
-    # Step 6: Request LHR data (this might be a placeholder command)
-    write_register(0xB8, 0x00)  # Command to request MISO LHR data (from MSP430 code)
+# Main loop to continuously measure inductance
+try:
+    while True:
+        inductance = get_inductance()
+        time.sleep(1)  # Delay for next measurement
 
-    # Step 7: Return to conversion mode
-    write_register(0x0B, 0x00)  # Return to conversion mode
-
-# Function to verify configuration
-def verify_configuration():
-    start_config_value = read_register(0x0B)
-    dig_config_value = read_register(0x04)
-    rp_set_value = read_register(0x01)
-    print(f"START_CONFIG (0x0B) Value: 0x{start_config_value:02X}")
-    print(f"DIG_CONFIG (0x04) Value: 0x{dig_config_value:02X}")
-    print(f"RP_SET (0x01) Value: 0x{rp_set_value:02X}")
-
-# Run the configuration and verify it
-configure_ldc1101()
-verify_configuration()
-
-# Close SPI connection
-spi.close()
+except KeyboardInterrupt:
+    print("Program terminated.")
+    spi.close()  # Close SPI connection on exit
