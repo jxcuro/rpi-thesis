@@ -1,98 +1,115 @@
 import spidev
 import time
 
-# SPI Setup
+# Define LDC1101 registers (Including LHR related ones)
+LDC1101_REG_CFG_RP_MEASUREMENT_DYNAMIC_RANGE = 0x01
+LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_1 = 0x02
+LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_2 = 0x03
+LDC1101_REG_CFG_RP_L_CONVERSION_INTERVAL = 0x04
+LDC1101_REG_CFG_ADDITIONAL_DEVICE = 0x05
+LDC1101_REG_RP_THRESH_H_LSB = 0x06
+LDC1101_REG_RP_THRESH_H_MSB = 0x07
+LDC1101_REG_RP_THRESH_L_LSB = 0x08
+LDC1101_REG_RP_THRESH_L_MSB = 0x09
+LDC1101_REG_CFG_INTB_MODE = 0x0A
+LDC1101_REG_CFG_POWER_STATE = 0x0B
+LDC1101_REG_AMPLITUDE_CONTROL_REQUIREMENT = 0x0C
+LDC1101_REG_L_THRESH_HI_LSB = 0x16
+LDC1101_REG_L_THRESH_HI_MSB = 0x17
+LDC1101_REG_L_THRESH_LO_LSB = 0x18
+LDC1101_REG_L_THRESH_LO_MSB = 0x19
+LDC1101_REG_RP_L_MEASUREMENT_STATUS = 0x20
+LDC1101_REG_RP_DATA_LSB = 0x21
+LDC1101_REG_RP_DATA_MSB = 0x22
+LDC1101_REG_L_DATA_LSB = 0x23
+LDC1101_REG_L_DATA_MSB = 0x24
+LDC1101_REG_LHR_RCOUNT_LSB = 0x30
+LDC1101_REG_LHR_RCOUNT_MSB = 0x31
+LDC1101_REG_LHR_OFFSET_LSB = 0x32
+LDC1101_REG_LHR_OFFSET_MSB = 0x33
+LDC1101_REG_CFG_LHR = 0x34
+LDC1101_REG_LHR_DATA_LSB = 0x38
+LDC1101_REG_LHR_DATA_MID = 0x39
+LDC1101_REG_LHR_DATA_MSB = 0x3A
+LDC1101_REG_LHR_STATUS = 0x3B
+LDC1101_REG_DEVICE_RID_VALUE = 0x3E
+LDC1101_REG_CHIP_ID = 0x3F
+
+DEVICE_ERROR = 0x01
+DEVICE_OK = 0x00
+
+# Initialize SPI
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Open SPI bus 0, device 0 (CS0)
-spi.max_speed_hz = 50000  # SPI speed (adjust as necessary)
+spi.open(0, 0)  # Bus 0, Device 0
+spi.max_speed_hz = 50000
 spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
 
-# Register Addresses
-LHR_DATA_REG = [0x38, 0x39, 0x3A]  # LHR data registers (0x38, 0x39, 0x3A)
-LHR_OFFSET_REG = [0x32, 0x33]  # LHR offset registers (0x32, 0x33)
-LHR_CONFIG_REG = 0x34  # LHR configuration register (Sensor divider)
-RP_SET_REG = 0x01  # RPMIN register
-RCOUNT_REG = [0x30, 0x31]  # RCOUNT register for LHR conversion time
+# Function to write a byte to a register
+def ldc1101_write_byte(address, data):
+    write_data = [address, data]
+    spi.xfer2(write_data)
 
-# Constants (for the example)
-CLKIN_FREQ = 16_000_000  # 16 MHz CLKIN (change if using a different frequency)
-SENSOR_DIV = 0x01  # SENSOR_DIV value (0x01 = divide by 2)
+# Function to read a byte from a register
+def ldc1101_read_byte(address):
+    write_data = [0x80 | address]
+    response = spi.xfer2(write_data)
+    return response[1]
 
-# Helper function to read a single byte from a register
-def read_register(reg):
-    return spi.xfer2([reg | 0x80, 0x00])[1]  # OR with 0x80 for read operation
-
-# Helper function to write a byte to a register
-def write_register(reg, value):
-    spi.xfer2([reg & 0x7F, value])  # Mask reg with 0x7F for write operation
-
-# Read LHR data from registers 0x38, 0x39, 0x3A
-def read_lhr_data():
-    lhr_data = []
-    for reg in LHR_DATA_REG:
-        lhr_data.append(read_register(reg))
-    # Combine the three bytes into a single 24-bit value
-    lhr_value = (lhr_data[2] << 16) | (lhr_data[1] << 8) | lhr_data[0]
-    return lhr_value
-
-# Calculate sensor frequency from LHR data
-def calculate_sensor_frequency(lhr_data):
-    # Read LHR offset (0x32, 0x33)
-    lhr_offset = (read_register(LHR_OFFSET_REG[1]) << 8) | read_register(LHR_OFFSET_REG[0])
+# Initialize LDC1101 for LHR mode
+def ldc1101_init_lhr():
+    chip_id = ldc1101_read_byte(LDC1101_REG_CHIP_ID)
+    if chip_id != 0xD4:
+        return DEVICE_ERROR
     
-    # Sensor Divider (read from LHR_CONFIG)
-    sensor_div = read_register(LHR_CONFIG_REG) & 0x03  # Bits [1:0] for SENSOR_DIV
+    # Set up LHR mode by configuring the LHR mode register (0x34)
+    ldc1101_write_byte(LDC1101_REG_CFG_LHR, 0x01)  # Enable LHR mode
     
-    # Calculate sensor frequency using the formula
-    sensor_frequency = (lhr_data / lhr_offset) * (sensor_div / CLKIN_FREQ)
-    return sensor_frequency
+    # Default initialization for other registers
+    ldc1101_write_byte(LDC1101_REG_CFG_RP_MEASUREMENT_DYNAMIC_RANGE, 0x07)
+    ldc1101_write_byte(LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_1, 0x90)
+    ldc1101_write_byte(LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_2, 0xA0)
+    ldc1101_write_byte(LDC1101_REG_CFG_RP_L_CONVERSION_INTERVAL, 0x03)
+    ldc1101_write_byte(LDC1101_REG_CFG_ADDITIONAL_DEVICE, 0x00)  # 0x01
+    ldc1101_write_byte(LDC1101_REG_RP_THRESH_H_MSB, 0x00)
+    ldc1101_write_byte(LDC1101_REG_RP_THRESH_L_LSB, 0x00)
+    ldc1101_write_byte(LDC1101_REG_RP_THRESH_L_MSB, 0x00)
+    ldc1101_write_byte(LDC1101_REG_CFG_INTB_MODE, 0x00)
+    ldc1101_write_byte(LDC1101_REG_CFG_POWER_STATE, 0x01)  # Sleep mode
+    ldc1101_write_byte(LDC1101_REG_AMPLITUDE_CONTROL_REQUIREMENT, 0x00)  # 0x01
+    ldc1101_write_byte(LDC1101_REG_L_THRESH_HI_LSB, 0x00)
+    ldc1101_write_byte(LDC1101_REG_L_THRESH_HI_MSB, 0x00)
+    ldc1101_write_byte(LDC1101_REG_L_THRESH_LO_LSB, 0x00)
+    ldc1101_write_byte(LDC1101_REG_L_THRESH_LO_MSB, 0x00)
+    ldc1101_write_byte(LDC1101_REG_LHR_RCOUNT_LSB, 0x00)
+    ldc1101_write_byte(LDC1101_REG_LHR_RCOUNT_MSB, 0x00)
+    ldc1101_write_byte(LDC1101_REG_LHR_OFFSET_LSB, 0x00)
+    ldc1101_write_byte(LDC1101_REG_LHR_OFFSET_MSB, 0x00)
+    
+    time.sleep(0.1)
+    
+    return DEVICE_OK
 
-# Calculate inductance from sensor frequency
-def calculate_inductance(sensor_frequency, sensor_capacitance):
-    inductance = 1 / (sensor_capacitance * sensor_frequency**2)
-    return inductance
+# Set power mode (Active/Sleep/Shutdown)
+def ldc1101_set_power_mode(mode):
+    ldc1101_write_byte(LDC1101_REG_CFG_POWER_STATE, mode)
 
-# Set RPMIN for LHR measurements
-def set_rpmin(rp_value):
-    # Write RPMIN value to RP_SET register
-    write_register(RP_SET_REG, rp_value)
+# Get LHR data (reading 3 bytes and combining them)
+def ldc1101_get_lhr_data():
+    data_lsb = ldc1101_read_byte(LDC1101_REG_LHR_DATA_LSB)
+    data_mid = ldc1101_read_byte(LDC1101_REG_LHR_DATA_MID)
+    data_msb = ldc1101_read_byte(LDC1101_REG_LHR_DATA_MSB)
+    data = (data_msb << 16) | (data_mid << 8) | data_lsb
+    return data
 
-# Set RCOUNT for conversion time and resolution
-def set_rcount(rcount_value):
-    # Write RCOUNT value (2 bytes) to RCOUNT registers
-    write_register(RCOUNT_REG[0], rcount_value & 0xFF)
-    write_register(RCOUNT_REG[1], (rcount_value >> 8) & 0xFF)
-
-# Main code to interact with the LDC1101 and perform calculations
-def main():
-    # Configure LDC1101 settings
-    # Set RPMIN to appropriate value for your sensor (example: 3 kΩ)
-    set_rpmin(0b101)  # RPMIN = 3 kΩ
-    
-    # Set RCOUNT for desired resolution (example: full resolution)
-    set_rcount(0xFFFF)  # Maximum resolution
-    
-    # Read LHR data and calculate sensor frequency
-    lhr_data = read_lhr_data()
-    if lhr_data == 0x000000:
-        print("LHR conversion error or data is not valid.")
-        return
-    
-    print(f"LHR Data: {hex(lhr_data)}")
-    
-    # Calculate sensor frequency (example using LHR data)
-    sensor_frequency = calculate_sensor_frequency(lhr_data)
-    print(f"Sensor Frequency: {sensor_frequency} Hz")
-    
-    # Calculate inductance (example: assuming sensor capacitance = 1 nF)
-    sensor_capacitance = 1e-9  # 1 nF
-    inductance = calculate_inductance(sensor_frequency, sensor_capacitance)
-    print(f"Inductance: {inductance} H")
-    
-    # Wait for the next cycle or termination
-    time.sleep(1)
-
+# Main
 if __name__ == "__main__":
-    while True:
-        main()
-        time.sleep(1)  # Wait for the next cycle
+    if ldc1101_init_lhr() == DEVICE_OK:
+        print("LDC1101 initialized successfully in LHR mode")
+        ldc1101_set_power_mode(0x00)  # Active mode
+
+        while True:
+            lhr_data = ldc1101_get_lhr_data()
+            print(f"LHR Data: {lhr_data}")
+            time.sleep(1)
+    else:
+        print("Failed to initialize LDC1101")
