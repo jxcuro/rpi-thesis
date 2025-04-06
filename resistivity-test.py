@@ -4,7 +4,7 @@ import spidev
 # SPI Settings
 SPI_BUS = 0          # SPI Bus (typically 0 or 1)
 SPI_DEVICE = 0       # SPI Device (usually 0)
-SPI_SPEED = 100000   # 100 kHz SPI speed, can adjust based on requirements
+SPI_SPEED = 8000000   # 100 kHz SPI speed, can adjust based on requirements
 SPI_MODE = 0b00      # SPI Mode (CPOL = 0, CPHA = 0)
 
 # Initialize SPI
@@ -87,6 +87,7 @@ DEFAULT_VALUES = {
 
 # Function to write to a register
 def write_register(reg_addr, value):
+    print(f"Writing 0x{value:02X} to Register 0x{reg_addr:02X}")
     spi.xfer2([reg_addr & 0x7F, value])  # Send write command (MSB = 0)
 
 # Function to read from a register
@@ -98,10 +99,10 @@ def read_register(reg_addr):
 def initialize_ldc1101():
     print("Initializing LDC1101 Registers...")
 
-    # Write default values to all registers
+    # Write default values to all registers with delays
     for reg_addr, default_value in DEFAULT_VALUES.items():
         write_register(reg_addr, default_value)
-        time.sleep(0.1)  # Short delay for stability
+        time.sleep(0.1)  # Short delay to ensure proper writing
 
     print("LDC1101 Initialization Complete.")
 
