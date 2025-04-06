@@ -177,11 +177,7 @@ def display_all_registers():
         print(f"{name} (0x{addr:02X}): 0x{value:02X}")
 
 def main():
-    if initialize_ldc1101() != DEVICE_OK:
-        print("Failed to initialize LDC1101.")
-        return
-
-    print("LDC1101 initialized. Entering LHR mode...")
+    initialize_ldc1101()
     enable_powermode(ACTIVE_CONVERSION_MODE)
     enable_lhrmode()
     time.sleep(1)
