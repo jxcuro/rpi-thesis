@@ -1,88 +1,98 @@
 import spidev
 import time
-import RPi.GPIO as GPIO
 
-# Pin configuration for Raspberry Pi
-CS_PIN = 8  # Chip select (CS)
-MOSI_PIN = 10  # MOSI
-MISO_PIN = 9  # MISO
-SCK_PIN = 11  # SCK
-
-# Setup GPIO
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(CS_PIN, GPIO.OUT)
-
-# SPI setup
+# SPI Setup
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Open SPI bus 0, device 0 (CS connected to GPIO 8)
-spi.max_speed_hz = 1000000  # SPI speed (1 MHz)
-spi.mode = 0b01  # SPI mode 1 (CPOL=0, CPHA=1)
+spi.open(0, 0)  # Open SPI bus 0, device 0 (CS0)
+spi.max_speed_hz = 50000  # SPI speed (adjust as necessary)
+spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
 
-# Function to set LDC1101 to Sleep mode (important for configuration)
-def set_sleep_mode():
-    # Writing the command to set LDC1101 to Sleep mode (FUNC_MODE = b01)
-    # Assuming you have a method to write to the register (e.g., FUNC_MODE in register 0x0B)
-    FUNC_MODE_REG = 0x0B
-    FUNC_MODE_SLEEP = 0x01
-    write_register(FUNC_MODE_REG, FUNC_MODE_SLEEP)
-    time.sleep(0.1)  # Wait for the LDC1101 to enter sleep mode
+# Register Addresses
+LHR_DATA_REG = [0x38, 0x39, 0x3A]  # LHR data registers (0x38, 0x39, 0x3A)
+LHR_OFFSET_REG = [0x32, 0x33]  # LHR offset registers (0x32, 0x33)
+LHR_CONFIG_REG = 0x34  # LHR configuration register (Sensor divider)
+RP_SET_REG = 0x01  # RPMIN register
+RCOUNT_REG = [0x30, 0x31]  # RCOUNT register for LHR conversion time
 
-# Function to set LDC1101 to Active mode
-def set_active_mode():
-    # Writing the command to set LDC1101 to Active mode (FUNC_MODE = b00)
-    FUNC_MODE_REG = 0x0B
-    FUNC_MODE_ACTIVE = 0x00
-    write_register(FUNC_MODE_REG, FUNC_MODE_ACTIVE)
-    time.sleep(0.1)  # Wait for LDC1101 to activate and start conversions
+# Constants (for the example)
+CLKIN_FREQ = 16_000_000  # 16 MHz CLKIN (change if using a different frequency)
+SENSOR_DIV = 0x01  # SENSOR_DIV value (0x01 = divide by 2)
 
-# Function to write to the LDC1101 register
-def write_register(register, value):
-    # Send the register address and value to the LDC1101
-    GPIO.output(CS_PIN, GPIO.LOW)  # Pull CS low to start communication
-    spi.xfer2([register, value])
-    GPIO.output(CS_PIN, GPIO.HIGH)  # Pull CS high to end communication
+# Helper function to read a single byte from a register
+def read_register(reg):
+    return spi.xfer2([reg | 0x80, 0x00])[1]  # OR with 0x80 for read operation
 
-# Function to read from the LDC1101 register
-def read_register(register):
-    # Send the register address to read from and get the response
-    GPIO.output(CS_PIN, GPIO.LOW)
-    response = spi.xfer2([register, 0x00])  # Read from the register
-    GPIO.output(CS_PIN, GPIO.HIGH)
-    return response[1]  # Return the data byte (second byte of response)
+# Helper function to write a byte to a register
+def write_register(reg, value):
+    spi.xfer2([reg & 0x7F, value])  # Mask reg with 0x7F for write operation
 
-# Function to read inductance (assuming we want the LHR_DATA register)
-def read_inductance():
-    LHR_MSB_REG = 0x10  # Example register for LHR data MSB (adjust if different)
-    LHR_LSB_REG = 0x11  # Example register for LHR data LSB (adjust if different)
-    
-    # Read MSB and LSB values
-    msb = read_register(LHR_MSB_REG)
-    lsb = read_register(LHR_LSB_REG)
-    
-    # Combine MSB and LSB to get the full inductance value
-    inductance = (msb << 8) | lsb
-    
-    # Convert the raw value to inductance (based on LDC1101 datasheet scaling factor)
-    inductance_henries = inductance * 0.241723  # Example scaling factor (check datasheet)
-    
-    return inductance_henries
+# Read LHR data from registers 0x38, 0x39, 0x3A
+def read_lhr_data():
+    lhr_data = []
+    for reg in LHR_DATA_REG:
+        lhr_data.append(read_register(reg))
+    # Combine the three bytes into a single 24-bit value
+    lhr_value = (lhr_data[2] << 16) | (lhr_data[1] << 8) | lhr_data[0]
+    return lhr_value
 
-# Main program
-try:
-    # Step 1: Set LDC1101 to Sleep Mode for configuration
-    set_sleep_mode()
+# Calculate sensor frequency from LHR data
+def calculate_sensor_frequency(lhr_data):
+    # Read LHR offset (0x32, 0x33)
+    lhr_offset = (read_register(LHR_OFFSET_REG[1]) << 8) | read_register(LHR_OFFSET_REG[0])
     
-    # Step 2: Configure the LDC1101 as needed (e.g., setting registers)
-    # You can set other registers here as per your configuration needs
+    # Sensor Divider (read from LHR_CONFIG)
+    sensor_div = read_register(LHR_CONFIG_REG) & 0x03  # Bits [1:0] for SENSOR_DIV
     
-    # Step 3: Set LDC1101 to Active Mode
-    set_active_mode()
-    
-    # Step 4: Read Inductance
-    inductance = read_inductance()
-    print(f"Inductance: {inductance:.6f} H")
-    
-finally:
-    # Clean up GPIO
-    GPIO.cleanup()
+    # Calculate sensor frequency using the formula
+    sensor_frequency = (lhr_data / lhr_offset) * (sensor_div / CLKIN_FREQ)
+    return sensor_frequency
 
+# Calculate inductance from sensor frequency
+def calculate_inductance(sensor_frequency, sensor_capacitance):
+    inductance = 1 / (sensor_capacitance * sensor_frequency**2)
+    return inductance
+
+# Set RPMIN for LHR measurements
+def set_rpmin(rp_value):
+    # Write RPMIN value to RP_SET register
+    write_register(RP_SET_REG, rp_value)
+
+# Set RCOUNT for conversion time and resolution
+def set_rcount(rcount_value):
+    # Write RCOUNT value (2 bytes) to RCOUNT registers
+    write_register(RCOUNT_REG[0], rcount_value & 0xFF)
+    write_register(RCOUNT_REG[1], (rcount_value >> 8) & 0xFF)
+
+# Main code to interact with the LDC1101 and perform calculations
+def main():
+    # Configure LDC1101 settings
+    # Set RPMIN to appropriate value for your sensor (example: 3 kΩ)
+    set_rpmin(0b101)  # RPMIN = 3 kΩ
+    
+    # Set RCOUNT for desired resolution (example: full resolution)
+    set_rcount(0xFFFF)  # Maximum resolution
+    
+    # Read LHR data and calculate sensor frequency
+    lhr_data = read_lhr_data()
+    if lhr_data == 0x000000:
+        print("LHR conversion error or data is not valid.")
+        return
+    
+    print(f"LHR Data: {hex(lhr_data)}")
+    
+    # Calculate sensor frequency (example using LHR data)
+    sensor_frequency = calculate_sensor_frequency(lhr_data)
+    print(f"Sensor Frequency: {sensor_frequency} Hz")
+    
+    # Calculate inductance (example: assuming sensor capacitance = 1 nF)
+    sensor_capacitance = 1e-9  # 1 nF
+    inductance = calculate_inductance(sensor_frequency, sensor_capacitance)
+    print(f"Inductance: {inductance} H")
+    
+    # Wait for the next cycle or termination
+    time.sleep(1)
+
+if __name__ == "__main__":
+    while True:
+        main()
+        time.sleep(1)  # Wait for the next cycle
