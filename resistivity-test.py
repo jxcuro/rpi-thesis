@@ -51,14 +51,21 @@ def ldc1101_write_byte(address, data):
 
 # Function to read a byte from a register
 def ldc1101_read_byte(address):
-    write_data = [0x80 | address]
+    write_data = [0x80 | address]  # Set the read bit (0x80)
     response = spi.xfer2(write_data)
+    
+    # Ensure that we are getting a valid response
+    if len(response) != 2:
+        print(f"Error: SPI response length is not as expected: {len(response)}")
+        return None
+    
     return response[1]
 
 # Initialize LDC1101 for LHR mode
 def ldc1101_init_lhr():
     chip_id = ldc1101_read_byte(LDC1101_REG_CHIP_ID)
     if chip_id != 0xD4:
+        print("Error: Incorrect chip ID, device not found")
         return DEVICE_ERROR
     
     # Set up LHR mode by configuring the LHR mode register (0x34)
@@ -96,8 +103,21 @@ def ldc1101_set_power_mode(mode):
 # Get LHR data (reading 3 bytes and combining them)
 def ldc1101_get_lhr_data():
     data_lsb = ldc1101_read_byte(LDC1101_REG_LHR_DATA_LSB)
+    if data_lsb is None:
+        print("Error: Failed to read LHR LSB data")
+        return None
+    
     data_mid = ldc1101_read_byte(LDC1101_REG_LHR_DATA_MID)
+    if data_mid is None:
+        print("Error: Failed to read LHR MID data")
+        return None
+    
     data_msb = ldc1101_read_byte(LDC1101_REG_LHR_DATA_MSB)
+    if data_msb is None:
+        print("Error: Failed to read LHR MSB data")
+        return None
+    
+    # Combine the three bytes into a 24-bit value
     data = (data_msb << 16) | (data_mid << 8) | data_lsb
     return data
 
@@ -109,7 +129,8 @@ if __name__ == "__main__":
 
         while True:
             lhr_data = ldc1101_get_lhr_data()
-            print(f"LHR Data: {lhr_data}")
+            if lhr_data is not None:
+                print(f"LHR Data: {lhr_data}")
             time.sleep(1)
     else:
         print("Failed to initialize LDC1101")
