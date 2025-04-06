@@ -114,13 +114,30 @@ def display_all_registers():
         register_value = read_register(reg_addr)
         print(f"{register_name} (0x{reg_addr:02X}): 0x{register_value:02X}")
 
-# Main function to initialize the LDC1101 and read all registers
+# Function to monitor LHR_STATUS until it is ready
+def monitor_lhr_status():
+    print("Monitoring LHR_STATUS...")
+    while True:
+        lhr_status = read_register(0x3B)  # Read LHR_STATUS
+        print(f"LHR_STATUS: 0x{lhr_status:02X}")
+
+        # Check if LHR_STATUS indicates readiness (e.g., 0x00 for ready)
+        if lhr_status == 0x00:
+            print("LHR_STATUS is ready (0x00).")
+            break
+
+        time.sleep(0.5)  # Wait before checking again
+
+# Main function to initialize the LDC1101, monitor LHR_STATUS, and read all registers
 def main():
     # Initialize LDC1101 by configuring necessary registers
     initialize_ldc1101()
 
     # Wait for a moment to allow the device to stabilize
     time.sleep(1)  # Longer wait after initialization
+
+    # Monitor the LHR_STATUS register
+    monitor_lhr_status()
 
     # Display all register values
     display_all_registers()
