@@ -7,9 +7,11 @@ SPI_DEVICE = 0
 SPI_SPEED = 50000  # 50 kHz clock speed
 SPI_MODE = 0b00    # SPI mode (CPOL = 0, CPHA = 0)
 
-# LDC1101 register addresses (based on the provided register map)
-RP_SET_REG = 0x01  # RP_SET register address
-LHR_CONFIG_REG = 0x34  # LHR_CONFIG register address
+# LDC1101 register addresses
+START_CONFIG_REG = 0x0B  # START_CONFIG register address
+RCOUNT_LSB_REG = 0x30    # RCOUNT LSB register address
+RCOUNT_MSB_REG = 0x31    # RCOUNT MSB register address
+RP_MIN_REG = 0x32        # RP_MIN register address
 
 # Initialize SPI
 spi = spidev.SpiDev()
@@ -28,12 +30,17 @@ def read_register(reg_addr):
 
 # Function to initialize the LDC1101
 def initialize_ldc1101():
-    # Configure RP_SET register (writing 0x07 as per default)
-    write_register(RP_SET_REG, 0x07)
+    # Set RCOUNT to 0x258 (600 decimal)
+    write_register(RCOUNT_LSB_REG, 0x58)  # LSB
+    write_register(RCOUNT_MSB_REG, 0x02)  # MSB
     time.sleep(0.1)  # Wait for the register to be updated
 
-    # Configure LHR_CONFIG register (Set SENSOR_DIV to 0x01 to divide by 2)
-    write_register(LHR_CONFIG_REG, 0x01)  # Set SENSOR_DIV to 0x01 (divide by 2)
+    # Set RP_MIN to an appropriate value (e.g., 0x10)
+    write_register(RP_MIN_REG, 0x10)
+    time.sleep(0.1)  # Wait for the register to be updated
+
+    # Set START_CONFIG to 0x01 to activate measurements
+    write_register(START_CONFIG_REG, 0x01)
     time.sleep(0.1)  # Wait for the register to be updated
 
     # Display updated register values
