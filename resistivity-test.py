@@ -1,136 +1,78 @@
 import spidev
 import time
 
-# Define LDC1101 registers (Including LHR related ones)
-LDC1101_REG_CFG_RP_MEASUREMENT_DYNAMIC_RANGE = 0x01
-LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_1 = 0x02
-LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_2 = 0x03
-LDC1101_REG_CFG_RP_L_CONVERSION_INTERVAL = 0x04
-LDC1101_REG_CFG_ADDITIONAL_DEVICE = 0x05
-LDC1101_REG_RP_THRESH_H_LSB = 0x06
-LDC1101_REG_RP_THRESH_H_MSB = 0x07
-LDC1101_REG_RP_THRESH_L_LSB = 0x08
-LDC1101_REG_RP_THRESH_L_MSB = 0x09
-LDC1101_REG_CFG_INTB_MODE = 0x0A
-LDC1101_REG_CFG_POWER_STATE = 0x0B
-LDC1101_REG_AMPLITUDE_CONTROL_REQUIREMENT = 0x0C
-LDC1101_REG_L_THRESH_HI_LSB = 0x16
-LDC1101_REG_L_THRESH_HI_MSB = 0x17
-LDC1101_REG_L_THRESH_LO_LSB = 0x18
-LDC1101_REG_L_THRESH_LO_MSB = 0x19
-LDC1101_REG_RP_L_MEASUREMENT_STATUS = 0x20
-LDC1101_REG_RP_DATA_LSB = 0x21
-LDC1101_REG_RP_DATA_MSB = 0x22
-LDC1101_REG_L_DATA_LSB = 0x23
-LDC1101_REG_L_DATA_MSB = 0x24
-LDC1101_REG_LHR_RCOUNT_LSB = 0x30
-LDC1101_REG_LHR_RCOUNT_MSB = 0x31
-LDC1101_REG_LHR_OFFSET_LSB = 0x32
-LDC1101_REG_LHR_OFFSET_MSB = 0x33
-LDC1101_REG_CFG_LHR = 0x34
-LDC1101_REG_LHR_DATA_LSB = 0x38
-LDC1101_REG_LHR_DATA_MID = 0x39
-LDC1101_REG_LHR_DATA_MSB = 0x3A
-LDC1101_REG_LHR_STATUS = 0x3B
-LDC1101_REG_DEVICE_RID_VALUE = 0x3E
-LDC1101_REG_CHIP_ID = 0x3F
+# Register addresses (as seen in the MikroSDK driver)
+REG_RP_SETTLE_LSB       = 0x10
+REG_RP_SETTLE_MSB       = 0x11
+REG_SETTLE_COUNT_LSB    = 0x12
+REG_SETTLE_COUNT_MSB    = 0x13
+REG_CLOCK_DIVIDERS      = 0x14
+REG_STATUS              = 0x18
+REG_CONFIG              = 0x1A
+REG_MUX_CONFIG          = 0x1B
+REG_DEMUX_CONFIG        = 0x1C
+REG_RP_CONFIG           = 0x1D
+REG_LHR_RCOUNT_LSB      = 0x1E
+REG_LHR_RCOUNT_MID      = 0x1F
+REG_LHR_RCOUNT_MSB      = 0x20
+REG_LHR_OFFSET_LSB      = 0x21
+REG_LHR_OFFSET_MID      = 0x22
+REG_LHR_OFFSET_MSB      = 0x23
+REG_LHR_CONFIG          = 0x24
+REG_POWER_CONFIG        = 0x25
 
-DEVICE_ERROR = 0x01
-DEVICE_OK = 0x00
-
-# Initialize SPI
+# SPI setup
 spi = spidev.SpiDev()
-spi.open(0, 0)  # Bus 0, Device 0
-spi.max_speed_hz = 50000
-spi.mode = 0b00  # SPI mode 0 (CPOL=0, CPHA=0)
+spi.open(0, 0)  # Bus 0, CE0
+spi.max_speed_hz = 10000000  # Up to 10MHz
+spi.mode = 1  # CPOL = 0, CPHA = 1
 
-# Function to write a byte to a register
-def ldc1101_write_byte(address, data):
-    write_data = [address, data]
-    spi.xfer2(write_data)
+def write_register(addr, data):
+    # MSB=0 for write, so we send the register address with MSB cleared
+    spi.xfer2([addr & 0x7F, data])
 
-# Function to read a byte from a register
-def ldc1101_read_byte(address):
-    write_data = [0x80 | address]  # Set the read bit (0x80)
-    response = spi.xfer2(write_data)
-    
-    # Ensure that we are getting a valid response
-    if len(response) != 2:
-        print(f"Error: SPI response length is not as expected: {len(response)}")
-        return None
-    
-    return response[1]
+def read_register(addr):
+    # MSB=1 for read
+    return spi.xfer2([addr | 0x80, 0x00])[1]
 
-# Initialize LDC1101 for LHR mode
-def ldc1101_init_lhr():
-    chip_id = ldc1101_read_byte(LDC1101_REG_CHIP_ID)
-    if chip_id != 0xD4:
-        print("Error: Incorrect chip ID, device not found")
-        return DEVICE_ERROR
-    
-    # Set up LHR mode by configuring the LHR mode register (0x34)
-    ldc1101_write_byte(LDC1101_REG_CFG_LHR, 0x01)  # Enable LHR mode
-    
-    # Default initialization for other registers
-    ldc1101_write_byte(LDC1101_REG_CFG_RP_MEASUREMENT_DYNAMIC_RANGE, 0x07)
-    ldc1101_write_byte(LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_1, 0x90)
-    ldc1101_write_byte(LDC1101_REG_CFG_INTERNAL_TIME_CONSTANT_2, 0xA0)
-    ldc1101_write_byte(LDC1101_REG_CFG_RP_L_CONVERSION_INTERVAL, 0x03)
-    ldc1101_write_byte(LDC1101_REG_CFG_ADDITIONAL_DEVICE, 0x00)  # 0x01
-    ldc1101_write_byte(LDC1101_REG_RP_THRESH_H_MSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_RP_THRESH_L_LSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_RP_THRESH_L_MSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_CFG_INTB_MODE, 0x00)
-    ldc1101_write_byte(LDC1101_REG_CFG_POWER_STATE, 0x01)  # Sleep mode
-    ldc1101_write_byte(LDC1101_REG_AMPLITUDE_CONTROL_REQUIREMENT, 0x00)  # 0x01
-    ldc1101_write_byte(LDC1101_REG_L_THRESH_HI_LSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_L_THRESH_HI_MSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_L_THRESH_LO_LSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_L_THRESH_LO_MSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_LHR_RCOUNT_LSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_LHR_RCOUNT_MSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_LHR_OFFSET_LSB, 0x00)
-    ldc1101_write_byte(LDC1101_REG_LHR_OFFSET_MSB, 0x00)
-    
-    time.sleep(0.1)
-    
-    return DEVICE_OK
+def configure_lhr_mode():
+    # Based on MikroSDK and LDC1101 datasheet default LHR mode setup
 
-# Set power mode (Active/Sleep/Shutdown)
-def ldc1101_set_power_mode(mode):
-    ldc1101_write_byte(LDC1101_REG_CFG_POWER_STATE, mode)
+    # 1. Power down before config
+    write_register(REG_POWER_CONFIG, 0x01)  # Power down
+    time.sleep(0.01)
 
-# Get LHR data (reading 3 bytes and combining them)
-def ldc1101_get_lhr_data():
-    data_lsb = ldc1101_read_byte(LDC1101_REG_LHR_DATA_LSB)
-    if data_lsb is None:
-        print("Error: Failed to read LHR LSB data")
-        return None
-    
-    data_mid = ldc1101_read_byte(LDC1101_REG_LHR_DATA_MID)
-    if data_mid is None:
-        print("Error: Failed to read LHR MID data")
-        return None
-    
-    data_msb = ldc1101_read_byte(LDC1101_REG_LHR_DATA_MSB)
-    if data_msb is None:
-        print("Error: Failed to read LHR MSB data")
-        return None
-    
-    # Combine the three bytes into a 24-bit value
-    data = (data_msb << 16) | (data_mid << 8) | data_lsb
-    return data
+    # 2. Set the LHR Mode
+    write_register(REG_CONFIG, 0x02)  # MODE = 0b10 -> LHR mode
 
-# Main
-if __name__ == "__main__":
-    if ldc1101_init_lhr() == DEVICE_OK:
-        print("LDC1101 initialized successfully in LHR mode")
-        ldc1101_set_power_mode(0x00)  # Active mode
+    # 3. Recommended values (adjust based on your sensor setup)
+    write_register(REG_SETTLE_COUNT_LSB, 0xFF)
+    write_register(REG_SETTLE_COUNT_MSB, 0xFF)
+    write_register(REG_CLOCK_DIVIDERS, 0x03)  # FREF_DIV = 1, FIN_DIV = 1
+    write_register(REG_LHR_RCOUNT_LSB, 0xFF)
+    write_register(REG_LHR_RCOUNT_MID, 0xFF)
+    write_register(REG_LHR_RCOUNT_MSB, 0x0F)
+    write_register(REG_LHR_CONFIG, 0x20)  # Enable data averaging (optional)
 
-        while True:
-            lhr_data = ldc1101_get_lhr_data()
-            if lhr_data is not None:
-                print(f"LHR Data: {lhr_data}")
-            time.sleep(1)
-    else:
-        print("Failed to initialize LDC1101")
+    # 4. Power up
+    write_register(REG_POWER_CONFIG, 0x00)
+
+    time.sleep(0.01)
+
+    print("LHR Mode configured.")
+
+def read_lhr_data():
+    # Read LHR data registers
+    msb = read_register(0x30)
+    mid = read_register(0x31)
+    lsb = read_register(0x32)
+    result = ((msb << 16) | (mid << 8) | lsb)
+    return result
+
+# Example usage
+configure_lhr_mode()
+
+while True:
+    data = read_lhr_data()
+    print("LHR Data:", data)
+    time.sleep(0.5)
