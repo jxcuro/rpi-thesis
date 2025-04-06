@@ -12,6 +12,8 @@ START_CONFIG_REG = 0x0B  # START_CONFIG register address
 RCOUNT_LSB_REG = 0x30    # RCOUNT LSB register address
 RCOUNT_MSB_REG = 0x31    # RCOUNT MSB register address
 RP_MIN_REG = 0x32        # RP_MIN register address
+ALT_CONFIG_REG = 0x05    # ALT_CONFIG register address
+D_CONF_REG = 0x0C        # D_CONF register address
 
 # Initialize SPI
 spi = spidev.SpiDev()
@@ -37,6 +39,14 @@ def initialize_ldc1101():
 
     # Set RP_MIN to an appropriate value (e.g., 0x10)
     write_register(RP_MIN_REG, 0x10)
+    time.sleep(0.1)  # Wait for the register to be updated
+
+    # Set ALT_CONFIG to 0x01
+    write_register(ALT_CONFIG_REG, 0x01)
+    time.sleep(0.1)  # Wait for the register to be updated
+
+    # Set D_CONF to 0x01
+    write_register(D_CONF_REG, 0x01)
     time.sleep(0.1)  # Wait for the register to be updated
 
     # Set START_CONFIG to 0x01 to activate measurements
