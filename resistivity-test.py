@@ -50,7 +50,7 @@ def initialize_ldc1101():
     time.sleep(0.1)  # Wait for the register to be updated
 
     # Set START_CONFIG to 0x01 to activate measurements
-    write_register(START_CONFIG_REG, 0x01)
+    write_register(START_CONFIG_REG, 0x00)
     time.sleep(0.1)  # Wait for the register to be updated
 
     # Display updated register values
