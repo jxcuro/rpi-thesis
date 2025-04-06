@@ -62,6 +62,8 @@ GPIO.setup(CS_PIN, GPIO.OUT)   # Chip Select as output
 GPIO.setup(SCK_PIN, GPIO.OUT)  # Clock as output
 GPIO.setup(MISO_PIN, GPIO.IN)  # MISO as input
 GPIO.setup(MOSI_PIN, GPIO.OUT) # MOSI as output
+GPIO.output(CS_PIN, GPIO.HIGH)
+
 
 # Device status indicators
 DEVICE_ERROR = 0x01
@@ -100,7 +102,7 @@ def initialize_ldc1101():
     write_register(RP_THRESH_L_LSB_REG, 0x00)
     write_register(RP_THRESH_L_MSB_REG, 0x00)
     write_register(INTB_MODE_REG, 0x00)
-    write_register(START_CONFIG_REG, SLEEP_MODE)
+    write_register(START_CONFIG_REG, SHUTDOWN_MODE)
     write_register(D_CONF_REG, 0x00)  # 0x01 if needed
     write_register(L_THRESH_HI_LSB_REG, 0x00)
     write_register(L_THRESH_HI_MSB_REG, 0x00)
