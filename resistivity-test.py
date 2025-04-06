@@ -2,19 +2,19 @@ from time import sleep
 import spidev
 import RPi.GPIO as GPIO
 
-# Register addresses from datasheet
-LDC1101_REG_L_DATA_MSB = 0x22
-LDC1101_REG_L_DATA_LSB = 0x23
-LDC1101_REG_LHR_DATA_LSB2 = 0x25
-LDC1101_REG_CFG_POWER_STATE = 0x0F
-LDC1101_REG_MUX_CONFIG = 0x1B
+# Register addresses
+REG_START_CONFIG = 0x0B
+REG_MUX_CONFIG = 0x1B
+REG_L_DATA_MSB = 0x22
+REG_L_DATA_LSB = 0x23
+REG_LHR_DATA_LSB2 = 0x25
 
-# Mode values
-LDC1101_FUNC_MODE_SLEEP = 0x00
-LDC1101_FUNC_MODE_ACTIVE = 0x01
-LDC1101_LHR_MODE_ENABLE = 0x02
+# FUNC_MODE values for START_CONFIG[1:0]
+FUNC_MODE_ACTIVE = 0b00
+FUNC_MODE_SLEEP = 0b01
+FUNC_MODE_SHUTDOWN = 0b10  # Not used here
 
-LDC1101_SPI_READ = 0x80
+READ_FLAG = 0x80
 
 class LDC1101:
     def __init__(self, spi_bus=0, spi_device=0, cs_pin=8, int_pin=18):
@@ -42,25 +42,32 @@ class LDC1101:
 
     def read_register(self, reg):
         GPIO.output(self.cs_pin, GPIO.LOW)
-        result = self.spi.xfer2([reg | LDC1101_SPI_READ, 0x00])
+        result = self.spi.xfer2([reg | READ_FLAG, 0x00])
         GPIO.output(self.cs_pin, GPIO.HIGH)
         return result[1]
 
-    def set_power_mode(self, mode):
-        self.write_register(LDC1101_REG_CFG_POWER_STATE, mode)
+    def set_func_mode(self, mode):
+        # Read full byte to preserve other bits (if any), update only bits [1:0]
+        val = self.read_register(REG_START_CONFIG)
+        new_val = (val & 0xFC) | (mode & 0x03)  # Clear bits 0-1, set new FUNC_MODE
+        self.write_register(REG_START_CONFIG, new_val)
+        sleep(0.05)
 
     def enable_lhr_mode(self):
-        self.set_power_mode(LDC1101_FUNC_MODE_SLEEP)
-        sleep(0.05)
-        self.set_power_mode(LDC1101_FUNC_MODE_ACTIVE)
-        sleep(0.05)
-        self.write_register(LDC1101_REG_MUX_CONFIG, LDC1101_LHR_MODE_ENABLE)
+        print("Setting to Sleep Mode...")
+        self.set_func_mode(FUNC_MODE_SLEEP)
+
+        print("Writing MUX_CONFIG to enable LHR mode...")
+        self.write_register(REG_MUX_CONFIG, 0x02)  # LHR mode
+
+        print("Switching to Active Mode...")
+        self.set_func_mode(FUNC_MODE_ACTIVE)
         sleep(0.1)
 
     def get_lhr_data(self):
-        msb = self.read_register(LDC1101_REG_L_DATA_MSB)
-        mid = self.read_register(LDC1101_REG_L_DATA_LSB)
-        lsb = self.read_register(LDC1101_REG_LHR_DATA_LSB2)
+        msb = self.read_register(REG_L_DATA_MSB)
+        mid = self.read_register(REG_L_DATA_LSB)
+        lsb = self.read_register(REG_LHR_DATA_LSB2)
         return (msb << 16) | (mid << 8) | lsb
 
     def get_lhr_inductance(self, k_constant=1.0):
@@ -73,20 +80,18 @@ class LDC1101:
 if __name__ == "__main__":
     ldc = LDC1101(cs_pin=8, int_pin=18)
     try:
-        print("Starting LDC1101 in LHR mode...")
+        print("Initializing LDC1101 in LHR mode...")
         ldc.enable_lhr_mode()
-        sleep(0.1)
 
         while True:
             lhr_val = ldc.get_lhr_data()
             print(f"LHR Raw: {lhr_val}")
 
-            # Use your own calibration constant
-            inductance = ldc.get_lhr_inductance(k_constant=1000000.0)
+            inductance = ldc.get_lhr_inductance(k_constant=1_000_000.0)
             print(f"Estimated Inductance: {inductance:.6f} H")
             sleep(0.5)
 
     except KeyboardInterrupt:
-        print("Stopped.")
+        print("Exiting...")
     finally:
         ldc.cleanup()
