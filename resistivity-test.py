@@ -1,97 +1,172 @@
 import spidev
 import time
+import RPi.GPIO as GPIO
 
-# SPI settings
+# === SPI and GPIO Config ===
 SPI_BUS = 0
 SPI_DEVICE = 0
-SPI_SPEED = 50000  # 50 kHz clock speed
-SPI_MODE = 0b00  # SPI mode (CPOL = 0, CPHA = 0)
+SPI_SPEED = 50000  # 50 kHz
+SPI_MODE = 0b00    # Mode 0: CPOL = 0, CPHA = 0
 
-# LDC1101 register addresses
-START_CONFIG_REG = 0x0B  # START_CONFIG register address
-RCOUNT_LSB_REG = 0x30  # RCOUNT LSB register address
-RCOUNT_MSB_REG = 0x31  # RCOUNT MSB register address
-RP_MIN_REG = 0x32  # RP_MIN register address
-ALT_CONFIG_REG = 0x05  # ALT_CONFIG register address
-D_CONF_REG = 0x0C  # D_CONF register address
+CS_PIN = 8   # GPIO8 (CE0)
+SCK_PIN = 11 # Clock
+MISO_PIN = 9 # MISO
+MOSI_PIN = 10 # MOSI
 
-# Initialize SPI
+# === LDC1101 Register Addresses ===
+REG = {
+    "START_CONFIG": 0x0B,
+    "RP_SET": 0x01,
+    "TC1": 0x02,
+    "TC2": 0x03,
+    "DIG_CONFIG": 0x04,
+    "ALT_CONFIG": 0x05,
+    "RP_THRESH_H_MSB": 0x07,
+    "RP_THRESH_L_LSB": 0x08,
+    "RP_THRESH_L_MSB": 0x09,
+    "INTB_MODE": 0x0A,
+    "D_CONF": 0x0C,
+    "L_THRESH_HI_LSB": 0x16,
+    "L_THRESH_HI_MSB": 0x17,
+    "L_THRESH_LO_LSB": 0x18,
+    "L_THRESH_LO_MSB": 0x19,
+    "STATUS": 0x20,
+    "RP_DATA_LSB": 0x21,
+    "RP_DATA_MSB": 0x22,
+    "L_DATA_LSB": 0x23,
+    "L_DATA_MSB": 0x24,
+    "LHR_RCOUNT_LSB": 0x30,
+    "LHR_RCOUNT_MSB": 0x31,
+    "LHR_OFFSET_LSB": 0x32,
+    "LHR_OFFSET_MSB": 0x33,
+    "LHR_CONFIG": 0x34,
+    "LHR_DATA_LSB": 0x38,
+    "LHR_DATA_MID": 0x39,
+    "LHR_DATA_MSB": 0x3A,
+    "LHR_STATUS": 0x3B,
+    "CHIP_ID": 0x3F,
+}
+
+# === Device Constants ===
+DEVICE_OK = 0x00
+DEVICE_ERROR = 0x01
+
+# Power Modes
+ACTIVE_MODE = 0x00
+SLEEP_MODE = 0x01
+SHUTDOWN_MODE = 0x02
+
+# === SPI Init ===
 spi = spidev.SpiDev()
 spi.open(SPI_BUS, SPI_DEVICE)
 spi.max_speed_hz = SPI_SPEED
 spi.mode = SPI_MODE
 
+# === GPIO Init ===
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(CS_PIN, GPIO.OUT)
+GPIO.setup(SCK_PIN, GPIO.OUT)
+GPIO.setup(MISO_PIN, GPIO.IN)
+GPIO.setup(MOSI_PIN, GPIO.OUT)
 
-# Function to write to register
-def write_register(reg_addr, value):
-    spi.xfer2([reg_addr & 0x7F, value])  # Send write command (MSB = 0)
+# === Helper Functions ===
 
+def write_register(addr, value):
+    GPIO.output(CS_PIN, GPIO.LOW)
+    spi.xfer2([addr & 0x7F, value])
+    GPIO.output(CS_PIN, GPIO.HIGH)
 
-# Function to read register
-def read_register(reg_addr):
-    result = spi.xfer2([reg_addr | 0x80, 0x00])  # Send read command (MSB = 1)
-    return result[1]  # Return data from the register
+def read_register(addr):
+    GPIO.output(CS_PIN, GPIO.LOW)
+    resp = spi.xfer2([addr | 0x80, 0x00])
+    GPIO.output(CS_PIN, GPIO.HIGH)
+    return resp[1]
 
+# === Initialization ===
 
-# Function to initialize the LDC1101
 def initialize_ldc1101():
-    # Set RCOUNT to 0x258 (600 decimal)
-    write_register(RCOUNT_LSB_REG, 0x58)  # LSB
-    write_register(RCOUNT_MSB_REG, 0x02)  # MSB
-    time.sleep(0.1)  # Wait for the register to be updated
+    chip_id = read_register(REG["CHIP_ID"])
+    if chip_id != 0xD4:
+        print(f"Unexpected CHIP ID: 0x{chip_id:02X}")
+        return DEVICE_ERROR
 
-    # Set RP_MIN to an appropriate value (e.g., 0x10)
-    write_register(RP_MIN_REG, 0x10)
-    time.sleep(0.1)  # Wait for the register to be updated
+    write_register(REG["RP_SET"], 0x07)
+    write_register(REG["TC1"], 0x90)
+    write_register(REG["TC2"], 0xA0)
+    write_register(REG["DIG_CONFIG"], 0x03)
+    write_register(REG["ALT_CONFIG"], 0x00)
+    write_register(REG["RP_THRESH_H_MSB"], 0x00)
+    write_register(REG["RP_THRESH_L_LSB"], 0x00)
+    write_register(REG["RP_THRESH_L_MSB"], 0x00)
+    write_register(REG["INTB_MODE"], 0x00)
+    write_register(REG["START_CONFIG"], SLEEP_MODE)
+    write_register(REG["D_CONF"], 0x00)
+    write_register(REG["L_THRESH_HI_LSB"], 0x00)
+    write_register(REG["L_THRESH_HI_MSB"], 0x00)
+    write_register(REG["L_THRESH_LO_LSB"], 0x00)
+    write_register(REG["L_THRESH_LO_MSB"], 0x00)
+    write_register(REG["LHR_RCOUNT_LSB"], 0x00)
+    write_register(REG["LHR_RCOUNT_MSB"], 0x00)
+    write_register(REG["LHR_OFFSET_LSB"], 0x00)
+    write_register(REG["LHR_OFFSET_MSB"], 0x00)
+    write_register(REG["LHR_CONFIG"], 0x00)
+    time.sleep(0.1)
 
-    # Set ALT_CONFIG to 0x01
-    write_register(ALT_CONFIG_REG, 0x01)
-    time.sleep(0.1)  # Wait for the register to be updated
+    return DEVICE_OK
 
-    # Set D_CONF to 0x01
-    write_register(D_CONF_REG, 0x01)
-    time.sleep(0.1)  # Wait for the register to be updated
+# === Mode Config ===
 
-    # Set START_CONFIG to 0x01 to activate measurements
-    write_register(START_CONFIG_REG, 0x01)
-    time.sleep(0.1)  # Wait for the register to be updated
+def set_powermode(mode):
+    write_register(REG["START_CONFIG"], mode)
 
-    # Display updated register values
-    display_all_registers()
+def enable_lhr_mode():
+    write_register(REG["LHR_RCOUNT_LSB"], 0x00)
+    write_register(REG["LHR_RCOUNT_MSB"], 0x80)
+    write_register(REG["LHR_OFFSET_LSB"], 0x00)
+    write_register(REG["LHR_OFFSET_MSB"], 0x00)
+    write_register(REG["LHR_CONFIG"], 0x01)
 
+# === Data Fetch ===
 
-# Function to display all register values
+def read_lhr_data():
+    msb = read_register(REG["LHR_DATA_MSB"])
+    mid = read_register(REG["LHR_DATA_MID"])
+    lsb = read_register(REG["LHR_DATA_LSB"])
+    return (msb << 16) | (mid << 8) | lsb
+
+# === Debug ===
+
 def display_all_registers():
-    print("Reading all registers...")
+    print("=== LDC1101 Register Dump ===")
+    for name, addr in REG.items():
+        try:
+            val = read_register(addr)
+            print(f"{name:20s} (0x{addr:02X}): 0x{val:02X}")
+        except Exception as e:
+            print(f"{name:20s} (0x{addr:02X}): Error: {e}")
 
-    # List of all register addresses
-    register_addresses = [
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
-        0x0B, 0x0C, 0x16, 0x17, 0x18, 0x19, 0x20, 0x21, 0x22, 0x23, 0x24,
-        0x30, 0x31, 0x32, 0x33, 0x34, 0x38, 0x39, 0x3A, 0x3B, 0x3E, 0x3F
-    ]
+# === Main ===
 
-    # Read and display each register value
-    for addr in register_addresses:
-        value = read_register(addr)
-        print(f"Register 0x{addr:02X}: 0x{value:02X}")
-
-
-# Main function to initialize the LDC1101 and display register values
 def main():
-    # Initialize LDC1101 by configuring necessary registers
-    initialize_ldc1101()
+    if initialize_ldc1101() != DEVICE_OK:
+        print("Initialization failed.")
+        return
 
-    # Additional actions like configuring other registers or reading sensor data
-    time.sleep(1)  # Wait after initialization
+    print("LDC1101 initialized successfully. Switching to LHR mode...")
+    set_powermode(ACTIVE_MODE)
+    enable_lhr_mode()
+    time.sleep(1)
 
-    # Display all register values after configuration
-    display_all_registers()
+    try:
+        while True:
+            lhr = read_lhr_data()
+            print(f"LHR Data: {lhr}")
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("\nTerminated by user.")
+    finally:
+        spi.close()
+        GPIO.cleanup()
 
-
-# Run the main function
 if __name__ == '__main__':
     main()
-
-    # Cleanup
-    spi.close()
