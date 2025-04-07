@@ -182,7 +182,7 @@ def main():
         return
 
     print("LDC1101 initialized. Entering LHR mode...")
-    enable_lhrmode
+    enable_lhrmode()
     time.sleep(1)
     display_all_registers()
 
