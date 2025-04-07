@@ -54,12 +54,6 @@ SCK_PIN = 11 # Clock pin (example GPIO pin)
 MISO_PIN = 9 # MISO pin (example GPIO pin)
 MOSI_PIN = 10 # MOSI pin (example GPIO pin)
 
-# Initialize the GPIO library
-GPIO.setmode(GPIO.BCM)  # Use Broadcom pin numbering
-
-# Setup the GPIO pins for SPI
-GPIO.setup(CS_PIN, GPIO.OUT)
-
 # Device status indicators
 DEVICE_ERROR = 0x01
 DEVICE_OK = 0x00
