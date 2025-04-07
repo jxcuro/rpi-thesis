@@ -188,12 +188,12 @@ def main():
         return
 
     print("LDC1101 initialized. Entering LHR mode...")
-    enable_lhrmode()
+    enable_lmode()
     time.sleep(1)
     display_all_registers()
 
     while True:
-        lhr_val = getlhrdata()
+        lhr_val = getldata()
         print(f"LHR Data: {lhr_val}")
         time.sleep(0.5)
 
