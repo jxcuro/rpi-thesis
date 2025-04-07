@@ -57,6 +57,9 @@ MOSI_PIN = 10 # MOSI pin (example GPIO pin)
 # Initialize the GPIO library
 GPIO.setmode(GPIO.BCM)  # Use Broadcom pin numbering
 
+# Setup the GPIO pins for SPI
+GPIO.setup(CS_PIN, GPIO.OUT)
+
 # Device status indicators
 DEVICE_ERROR = 0x01
 DEVICE_OK = 0x00
@@ -84,9 +87,6 @@ def read_register(reg_addr):
     return result[1]  # Return data from the register
 
 def initialize_ldc1101():
-    chip_id = read_register(CHIP_ID_REG)
-    if chip_id != 0xD4:
-        return DEVICE_ERROR
 
     # Default Init
     write_register(RP_SET_REG, 0x07)
