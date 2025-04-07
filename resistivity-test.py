@@ -184,7 +184,7 @@ def main():
     display_all_registers()
 
     while True:
-        lhr_val = getrpdata()data()
+        lhr_val = getrpdata()
         print(f"LHR Data: {lhr_val}")
         time.sleep(0.5)
 
