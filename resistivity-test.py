@@ -53,12 +53,19 @@ CS_PIN = 8   # Chip Select pin (example GPIO pin)
 SCK_PIN = 11 # Clock pin (example GPIO pin)
 MISO_PIN = 9 # MISO pin (example GPIO pin)
 MOSI_PIN = 10 # MOSI pin (example GPIO pin)
+PWM_PIN = 12  # GPIO12 / Pin 32
 
 # Initialize the GPIO library
 GPIO.setmode(GPIO.BCM)  # Use Broadcom pin numbering
 
 # Setup the GPIO pins for SPI
 GPIO.setup(CS_PIN, GPIO.OUT)
+GPIO.setup(PWM_PIN, GPIO.OUT)
+
+# Setup PWM pin
+PWM_FREQ = 1000  # 1 kHz PWM frequency
+pwm = GPIO.PWM(PWM_PIN, PWM_FREQ)
+pwm.start(50)  # Start with 50% duty cycle
 
 # Device status indicators
 DEVICE_ERROR = 0x01
@@ -135,8 +142,8 @@ def enable_lhrmode():
     write_register(ALT_CONFIG_REG, 0x01)
     write_register(D_CONF_REG, 0x01)
     write_register(LHR_CONFIG_REG, 0x01)
-    write_register(RP_SET_REG, 0x07)
-    write_register(DIG_CONFIG_REG, 0xD5)
+    write_register(RP_SET_REG, 0x75)
+    write_register(DIG_CONFIG_REG, 0xE7)
     write_register(LHR_RCOUNT_LSB_REG, 0x4A)
     write_register(LHR_RCOUNT_MSB_REG, 0x01)
     write_register(LHR_DATA_LSB_REG, 0x00)
@@ -199,5 +206,6 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print("Exiting...")
     finally:
+        pwm.stop()
         spi.close()
         GPIO.cleanup()
