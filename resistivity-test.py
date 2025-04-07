@@ -51,6 +51,9 @@ spi.mode = SPI_MODE
 
 # Define the GPIO pins for the LDC1101
 CS_PIN = 8   # Chip Select pin (example GPIO pin)
+SCK_PIN = 11 # Clock pin (example GPIO pin)
+MISO_PIN = 9 # MISO pin (example GPIO pin)
+MOSI_PIN = 10 # MOSI pin (example GPIO pin)
 PWM_PIN = 12  # GPIO12 / Pin 32
 
 # Initialize the GPIO library
@@ -58,19 +61,21 @@ GPIO.setmode(GPIO.BCM)  # Use Broadcom pin numbering
 
 # Setup the GPIO pins for SPI
 GPIO.setup(CS_PIN, GPIO.OUT)
-GPIO.setup(PWM_PIN, GPIO.OUT)
 
 # Setup PWM pin
 pi = pigpio.pi()
 pi.set_mode(PWM_PIN, pigpio.OUTPUT)
+pi.set_PWM_frequency(CLKIN_PIN, 16000000)
+pi.set_PWM_dutycycle(CLKIN_PIN, 128)  # 50% duty cycle (0-255 range for pigpio)
 
 # Device status indicators
 DEVICE_ERROR = 0x01
 DEVICE_OK = 0x00
 
-# Power modes
+# Configure Power State (RW)
 ACTIVE_CONVERSION_MODE = 0x00
 SLEEP_MODE = 0x01
+SHUTDOWN_MODE = 0x02
 
 # Function to write to register
 def write_register(reg_addr, value):
@@ -105,19 +110,56 @@ def initialize_ldc1101():
     write_register(RP_THRESH_L_MSB_REG, 0x00)
     write_register(INTB_MODE_REG, 0x00)
     write_register(START_CONFIG_REG, SLEEP_MODE)
+    write_register(D_CONF_REG, 0x00)  # 0x01 if needed
+    write_register(L_THRESH_HI_LSB_REG, 0x00)
+    write_register(L_THRESH_HI_MSB_REG, 0x00)
+    write_register(L_THRESH_LO_LSB_REG, 0x00)
+    write_register(L_THRESH_LO_MSB_REG, 0x00)
+    write_register(LHR_RCOUNT_LSB_REG, 0x00)
+    write_register(LHR_RCOUNT_MSB_REG, 0x00)
+    write_register(LHR_OFFSET_LSB_REG, 0x00)
+    write_register(LHR_OFFSET_MSB_REG, 0x00)
+    write_register(LHR_CONFIG_REG, 0x00)
     time.sleep(0.1)
     return DEVICE_OK
 
+def enable_powermode(mode):
+    write_register(START_CONFIG_REG, mode)
+
+def enable_lmode():
+    write_register(START_CONFIG_REG, SLEEP_MODE)
+    write_register(ALT_CONFIG_REG, 0x01)
+    write_register(D_CONF_REG, 0x01)
+    write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
+
+def enable_rpmode():
+    write_register(START_CONFIG_REG, SLEEP_MODE)
+    write_register(ALT_CONFIG_REG, 0x02)
+    write_register(D_CONF_REG, 0x00)
+    write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
+
 def enable_lhrmode():
     write_register(START_CONFIG_REG, SLEEP_MODE)
-    # LHR application settings
-    write_register(0x01, 0x07)
-    write_register(0x04, 0xE7)
-    write_register(0x30, 0x4A)
-    write_register(0x31, 0x01)
-    write_register(0xB8, 0x00)  # Not typical but kept as-is
-    write_register(0x0B, 0x00)
+    write_register(ALT_CONFIG_REG, 0x01)
+    write_register(D_CONF_REG, 0x01)
+
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
+
+def getstatus():
+    status = read_register(0x20)
+    return status
+
+def getrpdata():
+    value = read_register(0x22)
+    value = value << 8
+    value = value | read_register(0x21)
+    return value
+
+def getldata():
+    value = read_register(0x24)
+    value = value << 8
+    value = value | read_register(0x23)
+    return value
 
 def getlhrdata():
     value = read_register(0x3A)
@@ -125,21 +167,18 @@ def getlhrdata():
     value = (value << 8) | read_register(0x38)
     return value
 
-def perform_frequency_sweep(start_freq, end_freq, step_size, delay=0.5):
-    # Perform frequency sweep
-    results = []
-    for freq in range(start_freq, end_freq + 1, step_size):
-        pi.hardware_PWM(PWM_PIN, freq, 500000)  # 50% duty cycle
-        time.sleep(delay)  # Wait for the LDC1101 to respond
-        lhr_val = getlhrdata()
-        results.append((freq, lhr_val))
-        print(f"Freq: {freq} Hz, LHR Data: {lhr_val}")
-    
-    # Optionally store the results in a file
-    with open('frequency_sweep_results.csv', 'w') as f:
-        f.write("Frequency, LHR Data\n")
-        for freq, lhr_val in results:
-            f.write(f"{freq}, {lhr_val}\n")
+def display_all_registers():
+    # List of all register addresses
+    register_addresses = [
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
+        0x0B, 0x0C, 0x16, 0x17, 0x18, 0x19, 0x20, 0x21, 0x22, 0x23, 0x24,
+        0x30, 0x31, 0x32, 0x33, 0x34, 0x38, 0x39, 0x3A, 0x3B, 0x3E, 0x3F
+    ]
+
+    # Read and display each register value
+    for addr in register_addresses:
+        value = read_register(addr)
+        print(f"Register 0x{addr:02X}: 0x{value:02X}")
 
 def main():
     if initialize_ldc1101() != DEVICE_OK:
@@ -149,9 +188,12 @@ def main():
     print("LDC1101 initialized. Entering LHR mode...")
     enable_lhrmode()
     time.sleep(1)
+    display_all_registers()
 
-    # Perform frequency sweep from 1 kHz to 10 MHz with a step of 1 kHz
-    perform_frequency_sweep(1000, 10000000, 1000)
+    while True:
+        lhr_val = getlhrdata()
+        print(f"LHR Data: {lhr_val}")
+        time.sleep(0.5)
 
 # Run main
 if __name__ == '__main__':
