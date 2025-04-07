@@ -174,7 +174,8 @@ def main():
     if initialize_ldc1101() != DEVICE_OK:
         print("Failed to initialize LDC1101.")
         return
-
+    
+    display_all_registers()
     print("LDC1101 initialized. Entering LHR mode...")
     enable_powermode(ACTIVE_CONVERSION_MODE)
     enable_lhrmode()
