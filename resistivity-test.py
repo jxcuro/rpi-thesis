@@ -144,7 +144,7 @@ def enable_lhrmode():
     write_register(D_CONF_REG, 0x01)
     write_register(LHR_RCOUNT_LSB_REG, 0xFF)
     write_register(LHR_RCOUNT_MSB_REG, 0xFF)
-    write_register(LHR_CONFIG_REG, 0xFF)
+    write_register(LHR_CONFIG_REG, 0x01)
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
 def getstatus():
