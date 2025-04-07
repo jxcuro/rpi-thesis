@@ -58,10 +58,7 @@ MOSI_PIN = 10 # MOSI pin (example GPIO pin)
 GPIO.setmode(GPIO.BCM)  # Use Broadcom pin numbering
 
 # Setup the GPIO pins for SPI
-GPIO.setup(CS_PIN, GPIO.OUT)   # Chip Select as output
-GPIO.setup(SCK_PIN, GPIO.OUT)  # Clock as output
-GPIO.setup(MISO_PIN, GPIO.OUT)  # MISO as input
-GPIO.setup(MOSI_PIN, GPIO.OUT) # MOSI as output
+GPIO.setup(CS_PIN, GPIO.OUT)
 
 # Device status indicators
 DEVICE_ERROR = 0x01
@@ -79,7 +76,7 @@ def write_register(reg_addr, value):
     spi.xfer2([reg_addr & 0x7F, value])  # Send write command (MSB = 0)
     time.sleep(0.1)  # Wait for the register to be updated
     GPIO.output(CS_PIN, GPIO.HIGH)
-    
+
 # Function to read register
 def read_register(reg_addr):
     GPIO.output(CS_PIN, GPIO.LOW)
