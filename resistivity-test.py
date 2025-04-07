@@ -65,8 +65,8 @@ GPIO.setup(CS_PIN, GPIO.OUT)
 # Setup PWM pin
 pi = pigpio.pi()
 pi.set_mode(PWM_PIN, pigpio.OUTPUT)
-pi.set_PWM_frequency(CLKIN_PIN, 16000000)
-pi.set_PWM_dutycycle(CLKIN_PIN, 128)  # 50% duty cycle (0-255 range for pigpio)
+pi.set_PWM_frequency(PWM_PIN, 16000000)
+pi.set_PWM_dutycycle(PWM_PIN, 128)  # 50% duty cycle (0-255 range for pigpio)
 
 # Device status indicators
 DEVICE_ERROR = 0x01
