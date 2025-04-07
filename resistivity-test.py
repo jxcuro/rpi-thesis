@@ -121,10 +121,12 @@ def enable_powermode(mode):
 def enable_lmode():
     write_register(ALT_CONFIG_REG, 0x01)
     write_register(D_CONF_REG, 0x01)
+    write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
 def enable_rpmode():
     write_register(ALT_CONFIG_REG, 0x02)
     write_register(D_CONF_REG, 0x00)
+    write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
 def enable_lhrmode():
     write_register(ALT_CONFIG_REG, 0x03)
@@ -177,7 +179,7 @@ def main():
         return
 
     print("LDC1101 initialized. Entering LHR mode...")
-    enable_lhrmode()
+    enable_lmode()
     time.sleep(1)
     display_all_registers()
 
