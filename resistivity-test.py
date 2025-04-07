@@ -132,8 +132,10 @@ def enable_rpmode():
 
 def enable_lhrmode():
     write_register(START_CONFIG_REG, SLEEP_MODE)
+    write_register(LHR_CONFIG_REG, 0x01)
+    write_register(ALT_CONFIG_REG, 0x02)
     write_register(RP_SET_REG, 0x07)
-    write_register(DIG_CONFIG_REG, 0xE7)
+    write_register(DIG_CONFIG_REG, 0xD5)
     write_register(LHR_RCOUNT_LSB_REG, 0x4A)
     write_register(LHR_RCOUNT_MSB_REG, 0x01)
     write_register(LHR_DATA_LSB_REG, 0x00)
