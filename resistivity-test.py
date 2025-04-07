@@ -63,9 +63,8 @@ GPIO.setup(CS_PIN, GPIO.OUT)
 GPIO.setup(PWM_PIN, GPIO.OUT)
 
 # Setup PWM pin
-PWM_FREQ = 8000000  # 1 kHz PWM frequency
-pwm = GPIO.PWM(PWM_PIN, PWM_FREQ)
-pwm.start(50)  # Start with 50% duty cycle
+pwm = GPIO.PWM(PWM_PIN, 1000000)  # Start with 1MHz for testing
+pwm.start(50)  # 50% duty cycle
 
 # Device status indicators
 DEVICE_ERROR = 0x01
@@ -139,14 +138,13 @@ def enable_rpmode():
 
 def enable_lhrmode():
     write_register(START_CONFIG_REG, SLEEP_MODE)
-    write_register(ALT_CONFIG_REG, 0x01)
-    write_register(D_CONF_REG, 0x01)
-    write_register(LHR_CONFIG_REG, 0x01)
-    write_register(RP_SET_REG, 0x75)
-    write_register(DIG_CONFIG_REG, 0xE7)
-    write_register(LHR_RCOUNT_LSB_REG, 0x4A)
-    write_register(LHR_RCOUNT_MSB_REG, 0x01)
-    write_register(LHR_DATA_LSB_REG, 0x00)
+    write_register(ALT_CONFIG_REG, 0x01)           # Use IN0
+    write_register(D_CONF_REG, 0x01)               # Enable LHR mode
+    write_register(LHR_CONFIG_REG, 0x01)           # LHR enable + lowest hysteresis
+    write_register(RP_SET_REG, 0x75)               # Mid-range Rp setting
+    write_register(DIG_CONFIG_REG, 0xC7)           # Moderate drive config (tweak later)
+    write_register(LHR_RCOUNT_LSB_REG, 0x00)       # Lower byte of RCOUNT
+    write_register(LHR_RCOUNT_MSB_REG, 0x02)       # Upper byte of RCOUNT (512)
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
 def getstatus():
