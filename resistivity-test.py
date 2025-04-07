@@ -128,7 +128,7 @@ def enable_powermode(mode):
 
 def enable_lmode():
     write_register(START_CONFIG_REG, SLEEP_MODE)
-    write_register(ALT_CONFIG_REG, 0x02)
+    write_register(ALT_CONFIG_REG, 0x01)
     write_register(D_CONF_REG, 0x01)
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
@@ -142,9 +142,17 @@ def enable_lhrmode():
     write_register(START_CONFIG_REG, SLEEP_MODE)
     write_register(ALT_CONFIG_REG, 0x01)
     write_register(D_CONF_REG, 0x01)
-    write_register(LHR_RCOUNT_LSB_REG, 0xFF)
-    write_register(LHR_RCOUNT_MSB_REG, 0xFF)
-    write_register(LHR_CONFIG_REG, 0x01)
+    write_register(LHR_CONFIG_REG, 0x02)
+
+    write_register(RP_SET_REG, 0xA5)
+    write_register(TC1_REG, 0xDE)
+    write_register(TC2_REG, 0xFF)
+    write_register(DIG_CONFIG_REG, 0xE7)
+    write_register(INTB_MODE_REG, 0xA0)
+
+    write_register(LHR_RCOUNT_LSB_REG, 0xEE)
+    write_register(LHR_RCOUNT_MSB_REG, 0x02)
+
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
 def getstatus():
@@ -188,12 +196,12 @@ def main():
         return
 
     print("LDC1101 initialized. Entering LHR mode...")
-    enable_lmode()
+    enable_rpmode()
     time.sleep(1)
     display_all_registers()
 
     while True:
-        lhr_val = getldata()
+        lhr_val = getrpdata()
         print(f"LHR Data: {lhr_val}")
         time.sleep(0.5)
 
