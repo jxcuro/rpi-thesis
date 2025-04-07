@@ -63,7 +63,7 @@ GPIO.setup(CS_PIN, GPIO.OUT)
 GPIO.setup(PWM_PIN, GPIO.OUT)
 
 # Setup PWM pin
-PWM_FREQ = 1000  # 1 kHz PWM frequency
+PWM_FREQ = 8000000  # 1 kHz PWM frequency
 pwm = GPIO.PWM(PWM_PIN, PWM_FREQ)
 pwm.start(50)  # Start with 50% duty cycle
 
