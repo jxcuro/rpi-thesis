@@ -129,13 +129,11 @@ def enable_rpmode():
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
 def enable_lhrmode():
-    write_register(ALT_CONFIG_REG, 0x03)
-    write_register(D_CONF_REG, 0x01)
-    write_register(LHR_RCOUNT_LSB_REG, 0x00)
-    write_register(LHR_RCOUNT_MSB_REG, 0x80)
-    write_register(LHR_OFFSET_LSB_REG, 0x00)
-    write_register(LHR_OFFSET_MSB_REG, 0x00)
-    write_register(LHR_CONFIG_REG, 0x01)
+    write_register(RP_SET_REG, 0x07)
+    write_register(DIG_CONFIG_REG, 0xE7)
+    write_register(LHR_RCOUNT_LSB_REG, 0x4A)
+    write_register(LHR_RCOUNT_MSB_REG, 0x01)
+    write_register(LHR_DATA_LSB_REG, 0x00)
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
 def getstatus():
@@ -179,12 +177,12 @@ def main():
         return
 
     print("LDC1101 initialized. Entering LHR mode...")
-    enable_rpmode()
+    enable_lhrmode
     time.sleep(1)
     display_all_registers()
 
     while True:
-        lhr_val = getrpdata()
+        lhr_val = getlhrdata()
         print(f"LHR Data: {lhr_val}")
         time.sleep(0.5)
 
