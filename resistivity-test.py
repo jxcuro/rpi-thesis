@@ -140,21 +140,16 @@ def enable_rpmode():
 
 def enable_lhrmode():
     write_register(START_CONFIG_REG, SLEEP_MODE)
-    write_register(ALT_CONFIG_REG, 0x01)
-    write_register(D_CONF_REG, 0x01)
-    write_register(LHR_CONFIG_REG, 0x02)
-
-    write_register(RP_SET_REG, 0xA5)
-    write_register(TC1_REG, 0xDE)
-    write_register(TC2_REG, 0xFF)
-    write_register(DIG_CONFIG_REG, 0xE7)
-    write_register(INTB_MODE_REG, 0xA0)
-
-    write_register(LHR_RCOUNT_LSB_REG, 0xEE)
-    write_register(LHR_RCOUNT_MSB_REG, 0x02)
-
-    write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
-
+    write_register(RP_SET_REG, 0x07)
+    write_register(TC1_REG, 0x00)
+    write_register(TC2_REG, 0x00)
+    write_register(DIG_CONFIG_REG, 0x07)
+    write_register(ALT_CONFIG_REG, 0x00)
+    write_register(STATUS_REG, 0x68)
+    write_register(LHR_RCOUNT_LSB_REG, 0xFF)
+    write_register(LHR_RCOUNT_MSB_REG, 0xFF)
+    write_register(START_CONFIG_REG, 0x01)
+    
 def getstatus():
     status = read_register(0x20)
     return status
