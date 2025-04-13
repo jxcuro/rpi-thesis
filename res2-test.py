@@ -177,14 +177,15 @@ def main():
         print("Failed to initialize LDC1101.")
         return
 
-    print("LDC1101 initialized. Entering LHR mode...")
+    print("LDC1101 initialized. Entering RP mode...")
     enable_rpmode()
     time.sleep(1)
     display_all_registers()
 
     while True:
-        lhr_val = getrpdata()
-        print(f"LHR Data: {lhr_val}")
+        rp_raw = getrpdata()
+        rp_ohms = rp_raw * 1.0  # TEMP SCALE: Assume 1 count = 1 Ohm
+        print(f"RP Data: {rp_ohms:.2f} Ω")
         time.sleep(0.5)
 
 # Run main
