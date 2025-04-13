@@ -1,7 +1,6 @@
 import spidev
 import time
 import RPi.GPIO as GPIO
-import pigpio
 
 # SPI settings
 SPI_BUS = 0
@@ -54,19 +53,12 @@ CS_PIN = 8   # Chip Select pin (example GPIO pin)
 SCK_PIN = 11 # Clock pin (example GPIO pin)
 MISO_PIN = 9 # MISO pin (example GPIO pin)
 MOSI_PIN = 10 # MOSI pin (example GPIO pin)
-PWM_PIN = 12  # GPIO12 / Pin 32
 
 # Initialize the GPIO library
 GPIO.setmode(GPIO.BCM)  # Use Broadcom pin numbering
 
 # Setup the GPIO pins for SPI
 GPIO.setup(CS_PIN, GPIO.OUT)
-
-# Setup PWM pin
-pi = pigpio.pi()
-pi.set_mode(PWM_PIN, pigpio.OUTPUT)
-pi.set_PWM_frequency(PWM_PIN, 16000000)
-pi.set_PWM_dutycycle(PWM_PIN, 128)  # 50% duty cycle (0-255 range for pigpio)
 
 # Device status indicators
 DEVICE_ERROR = 0x01
@@ -127,29 +119,25 @@ def enable_powermode(mode):
     write_register(START_CONFIG_REG, mode)
 
 def enable_lmode():
-    write_register(START_CONFIG_REG, SLEEP_MODE)
     write_register(ALT_CONFIG_REG, 0x01)
     write_register(D_CONF_REG, 0x01)
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
 def enable_rpmode():
-    write_register(START_CONFIG_REG, SLEEP_MODE)
     write_register(ALT_CONFIG_REG, 0x02)
     write_register(D_CONF_REG, 0x00)
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
 def enable_lhrmode():
-    write_register(START_CONFIG_REG, SLEEP_MODE)
-    write_register(RP_SET_REG, 0x07)
-    write_register(TC1_REG, 0x00)
-    write_register(TC2_REG, 0x00)
-    write_register(DIG_CONFIG_REG, 0x07)
-    write_register(ALT_CONFIG_REG, 0x00)
-    write_register(STATUS_REG, 0x68)
-    write_register(LHR_RCOUNT_LSB_REG, 0xFF)
-    write_register(LHR_RCOUNT_MSB_REG, 0xFF)
+    write_register(ALT_CONFIG_REG, 0x03)
+    write_register(D_CONF_REG, 0x01)
+    write_register(LHR_RCOUNT_LSB_REG, 0x00)
+    write_register(LHR_RCOUNT_MSB_REG, 0x80)
+    write_register(LHR_OFFSET_LSB_REG, 0x00)
+    write_register(LHR_OFFSET_MSB_REG, 0x00)
+    write_register(LHR_CONFIG_REG, 0x01)
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
-    
+
 def getstatus():
     status = read_register(0x20)
     return status
@@ -191,12 +179,12 @@ def main():
         return
 
     print("LDC1101 initialized. Entering LHR mode...")
-    enable_lhrmode()
+    enable_rpmode()
     time.sleep(1)
     display_all_registers()
 
     while True:
-        lhr_val = getlhrdata()
+        lhr_val = getrpdata()
         print(f"LHR Data: {lhr_val}")
         time.sleep(0.5)
 
@@ -207,7 +195,5 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print("Exiting...")
     finally:
-        pi.hardware_PWM(PWM_PIN, 0, 0)  # Turn off PWM
-        pi.stop()
         spi.close()
         GPIO.cleanup()
