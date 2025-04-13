@@ -72,13 +72,17 @@ SHUTDOWN_MODE = 0x02
 # Function to write to register
 def write_register(reg_addr, value):
     GPIO.output(CS_PIN, GPIO.LOW)
+    time.sleep(0.1)  # Wait for the register to be updated
     spi.xfer2([reg_addr & 0x7F, value])  # Send write command (MSB = 0)
+    time.sleep(0.1)  # Wait for the register to be updated
     GPIO.output(CS_PIN, GPIO.HIGH)
 
 # Function to read register
 def read_register(reg_addr):
     GPIO.output(CS_PIN, GPIO.LOW)
+    time.sleep(0.1)  # Wait for the register to be updated
     result = spi.xfer2([reg_addr | 0x80, 0x00])  # Send read command (MSB = 1)
+    time.sleep(0.1)  # Wait for the register to be updated
     GPIO.output(CS_PIN, GPIO.HIGH)
     return result[1]  # Return data from the register
 
@@ -115,19 +119,16 @@ def enable_powermode(mode):
     write_register(START_CONFIG_REG, mode)
 
 def enable_lmode():
-    write_register(START_CONFIG_REG, SLEEP_MODE)
     write_register(ALT_CONFIG_REG, 0x01)
     write_register(D_CONF_REG, 0x01)
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
 def enable_rpmode():
-    write_register(START_CONFIG_REG, SLEEP_MODE)
     write_register(ALT_CONFIG_REG, 0x02)
     write_register(D_CONF_REG, 0x00)
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
 def enable_lhrmode():
-    write_register(START_CONFIG_REG, SLEEP_MODE)
     write_register(ALT_CONFIG_REG, 0x03)
     write_register(D_CONF_REG, 0x01)
     write_register(LHR_RCOUNT_LSB_REG, 0x00)
@@ -172,32 +173,19 @@ def display_all_registers():
         value = read_register(addr)
         print(f"Register 0x{addr:02X}: 0x{value:02X}")
 
-rp_baseline = 0
-
 def main():
-    global rp_baseline
-
     if initialize_ldc1101() != DEVICE_OK:
         print("Failed to initialize LDC1101.")
         return
 
-    print("LDC1101 initialized. Entering RP mode...")
+    print("LDC1101 initialized. Entering LHR mode...")
     enable_rpmode()
     time.sleep(1)
     display_all_registers()
 
-    # Capture baseline value (no metal nearby)
-    print("Calibrating... Make sure there is NO metal near the sensor.")
-    time.sleep(2)
-    rp_baseline = getrpdata()
-    print(f"Baseline RP Value (no metal): {rp_baseline}")
-
-    print("Now reading RP values...\n")
-
     while True:
-        rp_raw = getrpdata()
-        rp_adjusted = max(0, rp_raw - rp_baseline)  # Prevent negative values
-        print(f"Adjusted RP: {rp_adjusted} ohms")
+        lhr_val = getrpdata()
+        print(f"LHR Data: {lhr_val}")
         time.sleep(0.5)
 
 # Run main
