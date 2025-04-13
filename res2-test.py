@@ -172,7 +172,11 @@ def display_all_registers():
         value = read_register(addr)
         print(f"Register 0x{addr:02X}: 0x{value:02X}")
 
+rp_baseline = 0
+
 def main():
+    global rp_baseline
+
     if initialize_ldc1101() != DEVICE_OK:
         print("Failed to initialize LDC1101.")
         return
@@ -182,10 +186,18 @@ def main():
     time.sleep(1)
     display_all_registers()
 
+    # Capture baseline value (no metal nearby)
+    print("Calibrating... Make sure there is NO metal near the sensor.")
+    time.sleep(2)
+    rp_baseline = getrpdata()
+    print(f"Baseline RP Value (no metal): {rp_baseline}")
+
+    print("Now reading RP values...\n")
+
     while True:
         rp_raw = getrpdata()
-        rp_ohms = rp_raw * 1.0  # TEMP SCALE: Assume 1 count = 1 Ohm
-        print(f"RP Data: {rp_ohms:.2f} ohms")
+        rp_adjusted = max(0, rp_raw - rp_baseline)  # Prevent negative values
+        print(f"Adjusted RP: {rp_adjusted} Ω")
         time.sleep(0.5)
 
 # Run main
