@@ -72,17 +72,13 @@ SHUTDOWN_MODE = 0x02
 # Function to write to register
 def write_register(reg_addr, value):
     GPIO.output(CS_PIN, GPIO.LOW)
-    time.sleep(0.1)  # Wait for the register to be updated
     spi.xfer2([reg_addr & 0x7F, value])  # Send write command (MSB = 0)
-    time.sleep(0.1)  # Wait for the register to be updated
     GPIO.output(CS_PIN, GPIO.HIGH)
 
 # Function to read register
 def read_register(reg_addr):
     GPIO.output(CS_PIN, GPIO.LOW)
-    time.sleep(0.1)  # Wait for the register to be updated
     result = spi.xfer2([reg_addr | 0x80, 0x00])  # Send read command (MSB = 1)
-    time.sleep(0.1)  # Wait for the register to be updated
     GPIO.output(CS_PIN, GPIO.HIGH)
     return result[1]  # Return data from the register
 
@@ -119,16 +115,19 @@ def enable_powermode(mode):
     write_register(START_CONFIG_REG, mode)
 
 def enable_lmode():
+    write_register(START_CONFIG_REG, SLEEP_MODE)
     write_register(ALT_CONFIG_REG, 0x01)
     write_register(D_CONF_REG, 0x01)
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
 def enable_rpmode():
+    write_register(START_CONFIG_REG, SLEEP_MODE)
     write_register(ALT_CONFIG_REG, 0x02)
     write_register(D_CONF_REG, 0x00)
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
 def enable_lhrmode():
+    write_register(START_CONFIG_REG, SLEEP_MODE)
     write_register(ALT_CONFIG_REG, 0x03)
     write_register(D_CONF_REG, 0x01)
     write_register(LHR_RCOUNT_LSB_REG, 0x00)
