@@ -185,7 +185,7 @@ def main():
     while True:
         rp_raw = getrpdata()
         rp_ohms = rp_raw * 1.0  # TEMP SCALE: Assume 1 count = 1 Ohm
-        print(f"RP Data: {rp_ohms:.2f} Ω")
+        print(f"RP Data: {rp_ohms:.2f} ohms")
         time.sleep(0.5)
 
 # Run main
