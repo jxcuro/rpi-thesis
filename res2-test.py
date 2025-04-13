@@ -197,7 +197,7 @@ def main():
     while True:
         rp_raw = getrpdata()
         rp_adjusted = max(0, rp_raw - rp_baseline)  # Prevent negative values
-        print(f"Adjusted RP: {rp_adjusted} Ω")
+        print(f"Adjusted RP: {rp_adjusted} ohms")
         time.sleep(0.5)
 
 # Run main
