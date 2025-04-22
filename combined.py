@@ -1,5 +1,5 @@
 # Combined Code: Camera, Magnetism, Inductance Measurement with Dataset Creation
-# Version: 1.3.3 - Fixed GUI Shift on Calibrate (Fixed Label Height)
+# Version: 1.3.4 - Corrected Syntax in calibrate_sensors try block
 
 import tkinter as tk
 from tkinter import ttk
@@ -297,10 +297,8 @@ def capture_and_save_data():
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     frame_enhanced_rgb = enhance_image_contrast(frame_rgb)
     img_enhanced = Image.fromarray(frame_enhanced_rgb)
-    try:
-        img_resized_for_save = img_enhanced.resize((SAVE_IMG_WIDTH, SAVE_IMG_HEIGHT), Image.Resampling.LANCZOS)
-    except AttributeError: # Fallback for older Pillow
-        img_resized_for_save = img_enhanced.resize((SAVE_IMG_WIDTH, SAVE_IMG_HEIGHT), Image.LANCZOS)
+    try: img_resized_for_save = img_enhanced.resize((SAVE_IMG_WIDTH, SAVE_IMG_HEIGHT), Image.Resampling.LANCZOS)
+    except AttributeError: img_resized_for_save = img_enhanced.resize((SAVE_IMG_WIDTH, SAVE_IMG_HEIGHT), Image.LANCZOS)
     except Exception as e: print(f"Error resizing image: {e}"); feedback_label.config(text=f"Resize Error: {e}", foreground="#E53935"); capture_button.config(state=tk.NORMAL); return
 
     # Generate Filename
@@ -342,32 +340,65 @@ def capture_and_save_data():
     window.after(1500, lambda: capture_button.config(state=tk.NORMAL))
     window.after(3500, lambda: feedback_label.config(text=""))
 
+# --- CORRECTED calibrate_sensors Function ---
 def calibrate_sensors():
     """Calibrates idle voltage for Hall sensor and idle RP value for LDC1101."""
     global IDLE_VOLTAGE, IDLE_RP_VALUE, feedback_label, window
-    feedback_text = ""; feedback_color = "#29B6F6"
+    feedback_text = ""
+    feedback_color = "#29B6F6" # Blue color
 
     # Calibrate Hall Sensor
     if hall_sensor:
-        voltages = []; feedback_label.config(text="Calibrating Hall...", foreground="#FFA726"); window.update()
-        for _ in range(NUM_SAMPLES_CALIBRATION): try: voltages.append(hall_sensor.voltage); time.sleep(0.05)
-            except Exception: pass
-        if voltages: IDLE_VOLTAGE = sum(voltages) / len(voltages); feedback_text += f"Hall Idle: {IDLE_VOLTAGE:.4f} V\n"
-        else: feedback_text += "Hall Cal Error: No readings\n"; feedback_color = "#FFA726"
-    else: feedback_text += "Hall Sensor N/A\n"; feedback_color = "#FFA726"
+        voltages = []
+        feedback_label.config(text="Calibrating Hall...", foreground="#FFA726")
+        window.update()
+        # Corrected Try/Except Structure
+        for _ in range(NUM_SAMPLES_CALIBRATION):
+            try:
+                voltages.append(hall_sensor.voltage)
+                time.sleep(0.05)
+            except Exception as e:
+                # print(f"Warning: Hall read error during calib sample: {e}") # Optional
+                pass # Ignore read errors during calibration sample gathering
+        # End Corrected Structure
+        if voltages:
+            IDLE_VOLTAGE = sum(voltages) / len(voltages)
+            feedback_text += f"Hall Idle: {IDLE_VOLTAGE:.4f} V\n"
+        else:
+            feedback_text += "Hall Cal Error: No valid readings\n"
+            feedback_color = "#FFA726" # Orange
+    else:
+        feedback_text += "Hall Sensor N/A\n"
+        feedback_color = "#FFA726"
 
     # Calibrate LDC1101
     if ldc_initialized:
-        rp_readings = []; feedback_label.config(text=feedback_text + "Calibrating LDC...", foreground="#FFA726"); window.update()
-        for _ in range(NUM_SAMPLES_CALIBRATION): val = get_ldc_rpdata(); time.sleep(0.05); (rp_readings.append(val) if val is not None else None)
-        if rp_readings: IDLE_RP_VALUE = int(sum(rp_readings) / len(rp_readings)); feedback_text += f"LDC RP Idle: {IDLE_RP_VALUE}"
-        else: feedback_text += "LDC Cal Error: No readings\n"; feedback_color = "#E53935" if feedback_color != "#FFA726" else "#FFA726"
-    else: feedback_text += "LDC Sensor N/A"; feedback_color = "#E53935" if feedback_color != "#FFA726" else "#FFA726"
+        rp_readings = []
+        feedback_label.config(text=feedback_text + "Calibrating LDC...", foreground="#FFA726")
+        window.update()
+        # Rewritten LDC Loop for Clarity
+        for _ in range(NUM_SAMPLES_CALIBRATION):
+            val = get_ldc_rpdata()
+            if val is not None:
+                rp_readings.append(val)
+            # else: optionally log that a None value was received
+            time.sleep(0.05) # Delay regardless of read success
+        # End Rewritten Loop
+        if rp_readings:
+            IDLE_RP_VALUE = int(sum(rp_readings) / len(rp_readings))
+            feedback_text += f"LDC RP Idle: {IDLE_RP_VALUE}"
+        else:
+            feedback_text += "LDC Cal Error: No valid readings\n"
+            feedback_color = "#E53935" if feedback_color != "#FFA726" else "#FFA726" # Red or Orange
+    else:
+        feedback_text += "LDC Sensor N/A"
+        feedback_color = "#E53935" if feedback_color != "#FFA726" else "#FFA726" # Red or Orange
 
     # Update feedback label - Text might wrap if long
     feedback_label.config(text=feedback_text.strip(), foreground=feedback_color)
-    # Schedule clear
+    # Schedule feedback clear
     window.after(4000, lambda: feedback_label.config(text=""))
+# --- End CORRECTED calibrate_sensors Function ---
 
 def update_camera_feed():
     """Updates the camera feed label in the GUI."""
@@ -381,7 +412,6 @@ def update_camera_feed():
             img_tk = ImageTk.PhotoImage(img)
             camera_label.img_tk = img_tk
             camera_label.configure(image=img_tk)
-        # else: print("Failed to grab frame") # Optional debug
     else:
          if not hasattr(camera_label, 'no_cam_img'):
              placeholder = Image.new('RGB', (DISPLAY_IMG_WIDTH, DISPLAY_IMG_HEIGHT), color = '#BDBDBD')
@@ -412,7 +442,7 @@ def update_ldc_reading():
     elif avg_rp_val is not None:
         RP_DISPLAY_BUFFER.append(avg_rp_val)
         if len(RP_DISPLAY_BUFFER) > 0: moving_avg_rp = sum(RP_DISPLAY_BUFFER) / len(RP_DISPLAY_BUFFER); display_rp_text = f"{int(moving_avg_rp)}"
-        else: display_rp_text = "..." # Buffer filling
+        else: display_rp_text = "..."
     else: RP_DISPLAY_BUFFER.clear(); display_rp_text = "Error"
     ldc_label.config(text=display_rp_text)
     window.after(GUI_UPDATE_INTERVAL_MS, update_ldc_reading)
@@ -427,7 +457,7 @@ def setup_gui():
     global label_font, readout_font, button_font, feedback_font, title_font, check_font
 
     window = tk.Tk()
-    window.title("Sensor Data Acquisition Tool v1.3.3")
+    window.title("Sensor Data Acquisition Tool v1.3.4") # Version update
     window.geometry("1100x700")
 
     # --- Style & Fonts ---
@@ -462,13 +492,11 @@ def setup_gui():
     controls_row_idx = 0
 
     # --- Feedback Area ---
-    # Use fixed height for the label to prevent layout shifts
+    # Use fixed height for the label
     feedback_label = ttk.Label(controls_frame, text="", style="Feedback.TLabel",
-                               anchor="nw", # Anchor NorthWest
-                               wraplength=350, # Adjust wrap length as needed
-                               height=2) # << Fixed height in lines
+                               anchor="nw", wraplength=350, height=2) # Fixed height
     feedback_label.grid(row=controls_row_idx, column=0, sticky="ew", pady=(0, 10))
-    # No need for rowconfigure minsize now, fixed widget height handles it
+    # No need for rowconfigure minsize as widget height is fixed
     controls_row_idx += 1
 
     # --- Sensor Readings Group ---
@@ -476,10 +504,10 @@ def setup_gui():
     readings_frame.grid(row=controls_row_idx, column=0, sticky="new", pady=(0, 15)); controls_row_idx += 1
     readings_frame.columnconfigure(0, weight=0); readings_frame.columnconfigure(1, weight=1)
     ttk.Label(readings_frame, text="Magnetism:").grid(row=0, column=0, sticky="w", padx=(0, 10))
-    magnetism_label = ttk.Label(readings_frame, text="Init...", style="Readout.TLabel", anchor="e") # Anchor right
+    magnetism_label = ttk.Label(readings_frame, text="Init...", style="Readout.TLabel", anchor="e")
     magnetism_label.grid(row=0, column=1, sticky="ew")
     ttk.Label(readings_frame, text="LDC RP:").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=(5,0))
-    ldc_label = ttk.Label(readings_frame, text="Init...", style="Readout.TLabel", anchor="e") # Anchor right
+    ldc_label = ttk.Label(readings_frame, text="Init...", style="Readout.TLabel", anchor="e")
     ldc_label.grid(row=1, column=1, sticky="ew", pady=(5,0))
 
     # --- Data Capture Group ---
