@@ -375,11 +375,17 @@ def update_magnetism():
     global magnetism_label, window
     avg_voltage = get_averaged_hall_voltage()
     if avg_voltage is not None:
-        try: adj_v = avg_voltage - IDLE_VOLTAGE; mag_mT = adj_v / SENSITIVITY_V_PER_MILLITESLA
-            if abs(mag_mT) < 1: magnetism_label.config(text=f"{mag_mT * 1000:.2f} µT")
-            else: magnetism_label.config(text=f"{mag_mT:.2f} mT")
-        except Exception: magnetism_label.config(text="Error")
-    else: magnetism_label.config(text="N/A" if not hall_sensor else "Error")
+        try: 
+            adj_v = avg_voltage - IDLE_VOLTAGE
+            mag_mT = adj_v / SENSITIVITY_V_PER_MILLITESLA
+            if abs(mag_mT) < 1: 
+                magnetism_label.config(text=f"{mag_mT * 1000:.2f} µT")
+            else: 
+                magnetism_label.config(text=f"{mag_mT:.2f} mT")
+        except Exception: 
+            magnetism_label.config(text="Error")
+    else: 
+        magnetism_label.config(text="N/A" if not hall_sensor else "Error")
     window.after(GUI_UPDATE_INTERVAL_MS, update_magnetism)
 
 def update_ldc_reading():
