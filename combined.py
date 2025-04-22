@@ -1,5 +1,5 @@
 # Combined Code: Camera, Magnetism, Inductance Measurement with Dataset Creation
-# Version: 1.3.1 - Syntax Check, Checkboxes, Resize, Sequential Naming, GUI Fix
+# Version: 1.3.2 - Syntax Fix (Line 341 area), Checkboxes, Resize, Sequential Naming, GUI Fix
 
 import tkinter as tk
 from tkinter import ttk
@@ -12,7 +12,7 @@ import csv
 from datetime import datetime
 import statistics
 from collections import deque
-import re # << Added for regex in file naming
+import re # For regex in file naming
 
 # --- I2C/ADS1115 Imports ---
 try:
@@ -76,7 +76,7 @@ IDLE_RP_VALUE = 0
 PROJECT_FOLDER_NAME = "Project_Dataset"
 IMAGES_FOLDER_NAME = "images"
 METADATA_FILENAME = "metadata.csv"
-METADATA_HEADER = [ # Updated Header
+METADATA_HEADER = [
     'image_filename', 'magnetism_mT', 'ldc_rp', 'delta_rp', 'target_material',
     'is_coated', 'is_dilapidated', 'is_degraded'
 ]
@@ -86,7 +86,7 @@ PROJECT_PATH = os.path.join(BASE_PATH, PROJECT_FOLDER_NAME)
 IMAGES_PATH = os.path.join(PROJECT_PATH, IMAGES_FOLDER_NAME)
 METADATA_PATH = os.path.join(PROJECT_PATH, METADATA_FILENAME)
 FILENAME_PREFIX = "data_"
-FILENAME_PADDING = 4 # e.g., data_0001.jpg
+FILENAME_PADDING = 4
 
 # --- Target Materials ---
 TARGET_OPTIONS = [
@@ -100,7 +100,7 @@ spi = None; ldc_initialized = False; clahe_processor = None
 
 # --- Global State ---
 RP_DISPLAY_BUFFER = deque(maxlen=LDC_DISPLAY_BUFFER_SIZE)
-data_counter = 1 # Default start, will be updated
+data_counter = 1
 
 # --- GUI Globals ---
 window = None; camera_label = None; controls_frame = None; feedback_label = None
@@ -114,37 +114,23 @@ feedback_font = None; title_font = None; check_font = None
 # === File/State Utils ====
 # =========================
 def get_next_data_index(img_dir, prefix, padding):
-    """Finds the next sequential index based on existing files."""
     max_index = 0
-    if not os.path.isdir(img_dir):
-        print(f"Info: Image directory not found ({img_dir}). Starting index at 1.")
-        return 1
+    if not os.path.isdir(img_dir): return 1
     try:
-        # Correctly format the regex pattern string
         filename_pattern_str = f"^{prefix}(\\d{{{padding}}})\\.jpg$"
         filename_pattern = re.compile(filename_pattern_str)
         for filename in os.listdir(img_dir):
             match = filename_pattern.match(filename)
             if match:
-                try:
-                    index = int(match.group(1))
-                    if index > max_index:
-                        max_index = index
-                except ValueError:
-                    print(f"Warning: Could not parse index from filename '{filename}'.")
-                    continue # Ignore if number conversion fails
-    except OSError as e:
-        print(f"Warning: Could not read image directory {img_dir}: {e}")
+                try: index = int(match.group(1)); max_index = max(max_index, index)
+                except ValueError: continue
+    except OSError as e: print(f"Warning: Could not read image directory {img_dir}: {e}")
     return max_index + 1
 
 def initialize_global_state():
-    """Initializes state variables like the data counter."""
     global data_counter
-    if not setup_project_directory():
-         print("Fatal Error: Could not create project directories. Cannot initialize state.")
-         return False
+    if not setup_project_directory(): print("Fatal Error: Directory setup failed."); return False
     print("Finding next available data index...")
-    # Pass constants correctly
     data_counter = get_next_data_index(IMAGES_PATH, FILENAME_PREFIX, FILENAME_PADDING)
     print(f"Starting data counter at: {data_counter}")
     return True
@@ -188,7 +174,6 @@ def initialize_hardware():
 # =========================
 # === LDC1101 Functions ===
 # =========================
-# (No changes needed here from previous correct version)
 def ldc_write_register(reg_addr, value):
     if not spi: return
     try: GPIO.output(CS_PIN, GPIO.LOW); spi.xfer2([reg_addr & 0x7F, value]); GPIO.output(CS_PIN, GPIO.HIGH)
@@ -218,7 +203,6 @@ def get_ldc_rpdata():
 # === CSV Handling =========
 # =========================
 def append_metadata(image_filename, mag_mT, rp_value, delta_rp, target, is_coated, is_dilapidated, is_degraded):
-    # (Signature updated, logic remains same)
     file_exists = os.path.isfile(METADATA_PATH)
     try:
         with open(METADATA_PATH, 'a', newline='') as csvfile:
@@ -236,14 +220,12 @@ def append_metadata(image_filename, mag_mT, rp_value, delta_rp, target, is_coate
 # === Sensor Reading (Avg) ===
 # ============================
 def get_averaged_hall_voltage(num_samples=NUM_SAMPLES_PER_UPDATE):
-    # (Remains same)
     if not hall_sensor: return None; readings = []
     for _ in range(num_samples):
         try: readings.append(hall_sensor.voltage); time.sleep(0.002)
         except Exception as e: print(f"Hall read error: {e}"); pass
     if not readings: return None; return sum(readings) / len(readings)
 def get_averaged_rp_data(num_samples=NUM_SAMPLES_PER_UPDATE):
-    # (Remains same)
     if not ldc_initialized: return None; readings = []
     for _ in range(num_samples):
         val = get_ldc_rpdata(); time.sleep(0.002); (readings.append(val) if val is not None else None)
@@ -253,7 +235,6 @@ def get_averaged_rp_data(num_samples=NUM_SAMPLES_PER_UPDATE):
 # === Image Enhancement Func ===
 # ==============================
 def enhance_image_contrast(frame_rgb):
-    # (Remains same)
     if clahe_processor is None: return frame_rgb
     try:
         lab = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2LAB); l, a, b = cv2.split(lab)
@@ -265,9 +246,8 @@ def enhance_image_contrast(frame_rgb):
 # === GUI Functions ===
 # ======================
 def capture_and_save_data():
-    # Access globals needed, including new checkbox vars and counter
     global feedback_label, capture_button, window, target_var, IDLE_RP_VALUE
-    global coated_var, dilapidated_var, degraded_var
+    global coated_var, dilapidated_var, degraded_var # Need globals to get values
     global data_counter
 
     if not camera: feedback_label.config(text="Camera not available", foreground="#E53935"); return
@@ -277,7 +257,7 @@ def capture_and_save_data():
     ret, frame = camera.read()
     if not ret: feedback_label.config(text="Failed to capture photo", foreground="#E53935"); capture_button.config(state=tk.NORMAL); return
 
-    # Process Image (Enhance -> PIL -> Resize)
+    # Process Image
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     frame_enhanced_rgb = enhance_image_contrast(frame_rgb)
     img_enhanced = Image.fromarray(frame_enhanced_rgb)
@@ -290,11 +270,11 @@ def capture_and_save_data():
     except Exception as e:
         print(f"Error resizing image: {e}"); feedback_label.config(text=f"Resize Error: {e}", foreground="#E53935"); capture_button.config(state=tk.NORMAL); return
 
-    # Generate Filename using counter
+    # Generate Filename
     image_filename = f"{FILENAME_PREFIX}{data_counter:0{FILENAME_PADDING}d}.jpg"
     image_save_path = os.path.join(IMAGES_PATH, image_filename)
 
-    # Get Sensor Readings (more samples for capture)
+    # Get Sensor Readings
     avg_voltage = get_averaged_hall_voltage(num_samples=NUM_SAMPLES_CALIBRATION)
     current_mag_mT = None
     if avg_voltage is not None:
@@ -304,9 +284,7 @@ def capture_and_save_data():
     delta_rp = None
     if current_rp_val is not None:
         current_rp_val = int(current_rp_val)
-        # Calculate delta_rp only if IDLE_RP_VALUE is valid (non-zero, assumes calibrated)
-        if IDLE_RP_VALUE != 0:
-             delta_rp = current_rp_val - IDLE_RP_VALUE
+        if IDLE_RP_VALUE != 0: delta_rp = current_rp_val - IDLE_RP_VALUE
 
     # Get Target and Condition Flags
     selected_target = target_var.get()
@@ -324,16 +302,14 @@ def capture_and_save_data():
 
     if meta_success:
         feedback_label.config(text=f"Data Added: {image_filename}", foreground="#66BB6A")
-        data_counter += 1 # Increment counter **only** on full success
+        data_counter += 1 # Increment counter on full success
     else:
         feedback_label.config(text="Image saved, metadata FAILED", foreground="#E53935")
-        # Consider cleanup if metadata fails: os.remove(image_save_path) ?
 
     window.after(1500, lambda: capture_button.config(state=tk.NORMAL))
-    window.after(3000, lambda: feedback_label.config(text="")) # Clear feedback after longer
+    window.after(3000, lambda: feedback_label.config(text=""))
 
 def calibrate_sensors():
-    # (Remains same)
     global IDLE_VOLTAGE, IDLE_RP_VALUE, feedback_label, window
     feedback_text = ""; feedback_color = "#29B6F6"
     if hall_sensor:
@@ -353,7 +329,6 @@ def calibrate_sensors():
     window.after(4000, lambda: feedback_label.config(text=""))
 
 def update_camera_feed():
-    # (Uses enhance_image_contrast, displays at DISPLAY_IMG_WIDTH/HEIGHT)
     global camera_label, window
     if camera:
         ret, frame = camera.read()
@@ -371,33 +346,25 @@ def update_camera_feed():
     window.after(50, update_camera_feed)
 
 def update_magnetism():
-    # (Remains same)
     global magnetism_label, window
     avg_voltage = get_averaged_hall_voltage()
     if avg_voltage is not None:
-        try: 
-            adj_v = avg_voltage - IDLE_VOLTAGE
-            mag_mT = adj_v / SENSITIVITY_V_PER_MILLITESLA
-            if abs(mag_mT) < 1: 
-                magnetism_label.config(text=f"{mag_mT * 1000:.2f} µT")
-            else: 
-                magnetism_label.config(text=f"{mag_mT:.2f} mT")
-        except Exception: 
-            magnetism_label.config(text="Error")
-    else: 
-        magnetism_label.config(text="N/A" if not hall_sensor else "Error")
+        try: adj_v = avg_voltage - IDLE_VOLTAGE; mag_mT = adj_v / SENSITIVITY_V_PER_MILLITESLA
+            if abs(mag_mT) < 1: magnetism_label.config(text=f"{mag_mT * 1000:.2f} µT")
+            else: magnetism_label.config(text=f"{mag_mT:.2f} mT")
+        except Exception: magnetism_label.config(text="Error")
+    else: magnetism_label.config(text="N/A" if not hall_sensor else "Error")
     window.after(GUI_UPDATE_INTERVAL_MS, update_magnetism)
 
 def update_ldc_reading():
-    # (Uses moving average buffer)
     global ldc_label, window, RP_DISPLAY_BUFFER
     avg_rp_val = get_averaged_rp_data(); display_rp_text = "N/A"
     if not ldc_initialized: display_rp_text = "N/A"
     elif avg_rp_val is not None:
         RP_DISPLAY_BUFFER.append(avg_rp_val)
         if len(RP_DISPLAY_BUFFER) > 0: moving_avg_rp = sum(RP_DISPLAY_BUFFER) / len(RP_DISPLAY_BUFFER); display_rp_text = f"{int(moving_avg_rp)}"
-        else: display_rp_text = "..." # Buffer filling
-    else: RP_DISPLAY_BUFFER.clear(); display_rp_text = "Error" # Clear buffer on error
+        else: display_rp_text = "..."
+    else: RP_DISPLAY_BUFFER.clear(); display_rp_text = "Error"
     ldc_label.config(text=display_rp_text)
     window.after(GUI_UPDATE_INTERVAL_MS, update_ldc_reading)
 
@@ -405,12 +372,11 @@ def update_ldc_reading():
 # === GUI Setup ========
 # ======================
 def setup_gui():
-    # Added Checkbuttons, fixed feedback label row height
     global window, camera_label, controls_frame, feedback_label, magnetism_label, ldc_label
     global target_var, capture_button, calibrate_button, coated_var, dilapidated_var, degraded_var
     global label_font, readout_font, button_font, feedback_font, title_font, check_font
 
-    window = tk.Tk(); window.title("Sensor Data Acquisition Tool v1.3.1"); window.geometry("1100x700")
+    window = tk.Tk(); window.title("Sensor Data Acquisition Tool v1.3.2"); window.geometry("1100x700")
     style = ttk.Style(); style.theme_use('clam' if 'clam' in style.theme_names() else 'default')
 
     # Define Fonts
@@ -441,20 +407,20 @@ def setup_gui():
     # Controls Frame
     controls_frame = ttk.Frame(main_frame); controls_frame.grid(row=0, column=1, padx=(0, 0), pady=0, sticky="nsew")
     controls_frame.columnconfigure(0, weight=1)
-    controls_row_idx = 0 # Use a specific counter for this frame's rows
+    controls_row_idx = 0
 
-    # Feedback Area - Configure row minsize
+    # Feedback Area
     feedback_label_row_idx = controls_row_idx
-    feedback_label = ttk.Label(controls_frame, text="", style="Feedback.TLabel", anchor="w", wraplength=350) # Adjust wraplength if needed
+    feedback_label = ttk.Label(controls_frame, text="", style="Feedback.TLabel", anchor="w", wraplength=350)
     feedback_label.grid(row=feedback_label_row_idx, column=0, sticky="ew", pady=(0, 10))
-    # Set minsize based on ~2.5 lines of feedback font
+    # Set minsize for the row containing the feedback label
     controls_frame.rowconfigure(feedback_label_row_idx, minsize=int(feedback_font.metrics('linespace') * 2.5))
     controls_row_idx += 1
 
     # Sensor Readings Group
     readings_frame = ttk.Labelframe(controls_frame, text=" Sensor Readings ", padding="15 10 15 10")
     readings_frame.grid(row=controls_row_idx, column=0, sticky="new", pady=(0, 15)); controls_row_idx += 1
-    readings_frame.columnconfigure(0, weight=0); readings_frame.columnconfigure(1, weight=1) # Value expands
+    readings_frame.columnconfigure(0, weight=0); readings_frame.columnconfigure(1, weight=1)
     ttk.Label(readings_frame, text="Magnetism:").grid(row=0, column=0, sticky="w", padx=(0, 10))
     magnetism_label = ttk.Label(readings_frame, text="Init...", style="Readout.TLabel", anchor="e") # Anchor right
     magnetism_label.grid(row=0, column=1, sticky="ew")
@@ -468,7 +434,7 @@ def setup_gui():
     actions_frame.columnconfigure(0, weight=1)
     action_row_idx = 0
 
-    # Target Material Dropdown
+    # Target Material
     target_title_label = ttk.Label(actions_frame, text="Target Material:"); target_title_label.grid(row=action_row_idx, column=0, sticky="w", pady=(0, 3)); action_row_idx += 1
     target_var = tk.StringVar(window); target_var.set(TARGET_OPTIONS[0])
     target_dropdown = ttk.OptionMenu(actions_frame, target_var, TARGET_OPTIONS[0], *TARGET_OPTIONS, style="TMenubutton")
@@ -476,14 +442,21 @@ def setup_gui():
 
     # Condition Checkboxes
     condition_label = ttk.Label(actions_frame, text="Conditions:"); condition_label.grid(row=action_row_idx, column=0, sticky="w", pady=(5, 3)); action_row_idx += 1
-    coated_var = tk.IntVar(value=0); dilapidated_var = tk.IntVar(value=0); degraded_var = tk.IntVar(value=0)
-    cb_coated = ttk.Checkbutton(actions_frame, text="Coated", variable=coated_var); cb_coated.grid(row=action_row_idx, column=0, sticky="w"); action_row_idx += 1
-    cb_dilapidated = ttk.Checkbutton(actions_frame, text="Dilapidated", variable=dilapidated_var); cb_dilapidated.grid(row=action_row_idx, column=0, sticky="w"); action_row_idx += 1
-    cb_degraded = ttk.Checkbutton(actions_frame, text="Degraded", variable=degraded_var); cb_degraded.grid(row=action_row_idx, column=0, sticky="w", pady=(0, 10)); action_row_idx += 1
+    # Define IntVars here, making them accessible via global scope later
+    coated_var = tk.IntVar(value=0)
+    dilapidated_var = tk.IntVar(value=0)
+    degraded_var = tk.IntVar(value=0)
+    # Create Checkbuttons (statements on separate lines)
+    cb_coated = ttk.Checkbutton(actions_frame, text="Coated", variable=coated_var, onvalue=1, offvalue=0)
+    cb_coated.grid(row=action_row_idx, column=0, sticky="w"); action_row_idx += 1
+    cb_dilapidated = ttk.Checkbutton(actions_frame, text="Dilapidated", variable=dilapidated_var, onvalue=1, offvalue=0)
+    cb_dilapidated.grid(row=action_row_idx, column=0, sticky="w"); action_row_idx += 1
+    cb_degraded = ttk.Checkbutton(actions_frame, text="Degraded", variable=degraded_var, onvalue=1, offvalue=0)
+    cb_degraded.grid(row=action_row_idx, column=0, sticky="w", pady=(0, 10)); action_row_idx += 1
 
-    ttk.Separator(actions_frame, orient='horizontal').grid(row=action_row_idx, column=0, sticky='ew', pady=(0, 15)); action_row_idx += 1
-
-    # Buttons
+    # Separator and Buttons (statements on separate lines)
+    separator = ttk.Separator(actions_frame, orient='horizontal')
+    separator.grid(row=action_row_idx, column=0, sticky='ew', pady=(0, 15)); action_row_idx += 1
     capture_button = ttk.Button(actions_frame, text="Capture & Add Data", command=capture_and_save_data)
     capture_button.grid(row=action_row_idx, column=0, sticky="ew", pady=(0, 8)); action_row_idx += 1
     calibrate_button = ttk.Button(actions_frame, text="Calibrate Sensors", command=calibrate_sensors)
@@ -493,14 +466,12 @@ def setup_gui():
 # === Main Execution =======
 # ==========================
 def run_application():
-    global window # Make sure window is accessible
-    if not initialize_global_state(): return # Sets up dirs & counter
+    global window
+    if not initialize_global_state(): return
     setup_gui()
-    # Set initial GUI states based on hardware check results
     if not camera: camera_label.configure(text="Camera Failed")
     if not hall_sensor: magnetism_label.config(text="N/A")
     if not ldc_initialized: ldc_label.config(text="N/A")
-    # Start update loops
     update_camera_feed(); update_magnetism(); update_ldc_reading()
     print("Starting Tkinter main loop...")
     window.mainloop()
@@ -511,21 +482,14 @@ def cleanup_resources():
     if camera and camera.isOpened(): print("Releasing camera..."); camera.release()
     cv2.destroyAllWindows()
     if spi: print("Closing SPI..."); spi.close()
-    if SPI_ENABLED: # Only cleanup GPIO if it was likely used
+    if SPI_ENABLED:
         try: print("Cleaning up GPIO..."); GPIO.cleanup()
-        except Exception as e: print(f"Note: GPIO cleanup error (maybe already cleaned?): {e}")
+        except Exception as e: print(f"Note: GPIO cleanup error: {e}")
     print("Cleanup complete.")
 
 # --- Run ---
 if __name__ == '__main__':
-    # Initialize hardware first, so GUI setup knows sensor status
     initialize_hardware()
-    try:
-        # Then run the app which sets up state, GUI, and starts loops
-        run_application()
-    except Exception as e:
-        print(f"FATAL ERROR in main execution: {e}")
-        import traceback
-        traceback.print_exc() # Print detailed error traceback
-    finally:
-        cleanup_resources() # Always attempt cleanup
+    try: run_application()
+    except Exception as e: print(f"FATAL ERROR: {e}"); import traceback; traceback.print_exc()
+    finally: cleanup_resources()
