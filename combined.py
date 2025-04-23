@@ -253,6 +253,7 @@ def initialize_ldc1101():
         print(f"LDC Chip ID Mismatch: Read 0x{chip_id:02X}, Expected 0x{LDC_CHIP_ID:02X}")
         return False
     print("Configuring LDC1101...")
+    ldc_write_register(START_CONFIG_REG, SHUTDOWN_MODE)
     # Write configuration registers
     ldc_write_register(RP_SET_REG, 0x1B)
     ldc_write_register(TC1_REG, 0x80)
