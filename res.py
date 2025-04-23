@@ -91,18 +91,18 @@ def initialize_ldc1101():
     if chip_id != 0xD4:
         return DEVICE_ERROR
 
-    # Custom Init for High Sensitivity Metal Detection in RP Mode
-    write_register(RP_SET_REG, 0x1B)         # RP_MIN = 12kΩ, RP_MAX = 24kΩ
-    write_register(TC1_REG, 0x80)            # TC1: R1 = ~264kΩ, C1 = 3pF
-    write_register(TC2_REG, 0x88)            # TC2: R2 = ~375kΩ, C2 = 12pF
-    write_register(DIG_CONFIG_REG, 0x07)     # Longest conversion time for accuracy (RESP_TIME = 6144)
-    write_register(ALT_CONFIG_REG, 0x02)     # Set to RP Mode
+    # Default Init
+    write_register(RP_SET_REG, 0x07)
+    write_register(TC1_REG, 0x90)
+    write_register(TC2_REG, 0xA0)
+    write_register(DIG_CONFIG_REG, 0x03)
+    write_register(ALT_CONFIG_REG, 0x00)  # 0x01 if needed
     write_register(RP_THRESH_H_MSB_REG, 0x00)
     write_register(RP_THRESH_L_LSB_REG, 0x00)
     write_register(RP_THRESH_L_MSB_REG, 0x00)
     write_register(INTB_MODE_REG, 0x00)
     write_register(START_CONFIG_REG, SLEEP_MODE)
-    write_register(D_CONF_REG, 0x01)         # Allow conversions even if amplitude not regulated
+    write_register(D_CONF_REG, 0x00)  # 0x01 if needed
     write_register(L_THRESH_HI_LSB_REG, 0x00)
     write_register(L_THRESH_HI_MSB_REG, 0x00)
     write_register(L_THRESH_LO_LSB_REG, 0x00)
@@ -112,7 +112,6 @@ def initialize_ldc1101():
     write_register(LHR_OFFSET_LSB_REG, 0x00)
     write_register(LHR_OFFSET_MSB_REG, 0x00)
     write_register(LHR_CONFIG_REG, 0x00)
-
     time.sleep(0.1)
     return DEVICE_OK
 
@@ -124,9 +123,9 @@ def enable_lmode():
     write_register(D_CONF_REG, 0x01)
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
-def enable_rpmode():
+def enable_rpmode(): #2 and 0
     write_register(ALT_CONFIG_REG, 0x02)
-    write_register(D_CONF_REG, 0x00)
+    write_register(D_CONF_REG, 0x01)
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
 def enable_lhrmode():
@@ -179,14 +178,14 @@ def main():
         print("Failed to initialize LDC1101.")
         return
 
-    print("LDC1101 initialized. Entering RP mode...")
+    print("LDC1101 initialized. Entering LHR mode...")
     enable_rpmode()
     time.sleep(1)
     display_all_registers()
 
     while True:
-        rp_val = getrpdata()
-        print(f"RP Data: {rp_val}")
+        lhr_val = getrpdata()
+        print(f"LHR Data: {lhr_val}")
         time.sleep(0.5)
 
 # Run main
