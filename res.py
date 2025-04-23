@@ -119,7 +119,7 @@ def enable_powermode(mode):
     write_register(START_CONFIG_REG, mode)
 
 def enable_lmode():
-    write_register(ALT_CONFIG_REG, 0x01)
+    write_register(ALT_CONFIG_REG, 0x00)
     write_register(D_CONF_REG, 0x00)
     write_register(START_CONFIG_REG, ACTIVE_CONVERSION_MODE)
 
