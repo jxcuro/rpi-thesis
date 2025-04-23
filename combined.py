@@ -258,7 +258,7 @@ def initialize_ldc1101():
     ldc_write_register(TC1_REG, 0x80)
     ldc_write_register(TC2_REG, 0x88)
     ldc_write_register(DIG_CONFIG_REG, 0x07) # Longest conversion time
-    ldc_write_register(ALT_CONFIG_REG, 0x02) # RP Mode
+    ldc_write_register(ALT_CONFIG_REG, 0x00) # RP Mode
     ldc_write_register(D_CONF_REG, 0x00)     # RP specific
     ldc_write_register(INTB_MODE_REG, 0x00) # Interrupt disabled
     # Start in sleep mode
@@ -278,7 +278,7 @@ def enable_ldc_rpmode():
     """Configures and enables RP conversion mode."""
     if not spi or not ldc_initialized: return
     print("Enabling LDC RP Mode...")
-    ldc_write_register(ALT_CONFIG_REG, 0x02)
+    ldc_write_register(ALT_CONFIG_REG, 0x00)
     ldc_write_register(D_CONF_REG, 0x00)
     enable_ldc_powermode(ACTIVE_CONVERSION_MODE)
     print("LDC RP Mode Active.")
