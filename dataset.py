@@ -1,5 +1,5 @@
 # Combined Code: Camera, Magnetism, Inductance Measurement with Dataset Creation
-# Version: 1.5.0 - Object/Shot Filenaming, GUI Control for New Object
+# Version: 1.5.1 - Relocated Feedback Label to Status Bar for Compactness
 
 import tkinter as tk
 from tkinter import ttk
@@ -39,10 +39,10 @@ except ImportError:
 # ==================================
 
 # --- Accuracy / Stability / Speed (Optimization) ---
-NUM_SAMPLES_PER_UPDATE = 3      # Reduced for faster GUI updates
-NUM_SAMPLES_CALIBRATION = 5     # Reduced for faster calibration/capture
-GUI_UPDATE_INTERVAL_MS = 250    # Sensor display update rate (4 Hz)
-LDC_DISPLAY_BUFFER_SIZE = 5     # Smoothing buffer for LDC display
+NUM_SAMPLES_PER_UPDATE = 3
+NUM_SAMPLES_CALIBRATION = 5
+GUI_UPDATE_INTERVAL_MS = 250
+LDC_DISPLAY_BUFFER_SIZE = 5
 
 # --- Image Saving ---
 SAVE_IMG_WIDTH = 224
@@ -57,7 +57,7 @@ DISPLAY_IMG_HEIGHT = 480
 HALL_ADC_CHANNEL = ADS.P0 if I2C_ENABLED else None
 SENSITIVITY_V_PER_TESLA = 0.0004
 SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000
-IDLE_VOLTAGE = 1.7256 # Default, will be recalibrated
+IDLE_VOLTAGE = 1.7256
 
 # --- Inductive Sensor (LDC1101) ---
 SPI_BUS = 0; SPI_DEVICE = 0; SPI_SPEED = 500000; SPI_MODE = 0b00
@@ -68,7 +68,7 @@ RP_DATA_MSB_REG, RP_DATA_LSB_REG = 0x22, 0x21; CHIP_ID_REG = 0x3F
 ACTIVE_CONVERSION_MODE, SLEEP_MODE = 0x00, 0x01
 
 # --- Calibration ---
-IDLE_RP_VALUE = 0 # Default, will be recalibrated
+IDLE_RP_VALUE = 0
 
 # --- Dataset / File Saving ---
 PROJECT_FOLDER_NAME = "Project_Dataset"
@@ -84,7 +84,6 @@ PROJECT_PATH = os.path.join(BASE_PATH, PROJECT_FOLDER_NAME)
 IMAGES_PATH = os.path.join(PROJECT_PATH, IMAGES_FOLDER_NAME)
 METADATA_PATH = os.path.join(PROJECT_PATH, METADATA_FILENAME)
 FILENAME_PREFIX = "data_"
-# FILENAME_PADDING removed, using OBJ_SHOT format
 
 # --- Target Materials ---
 TARGET_OPTIONS = [
@@ -97,16 +96,16 @@ spi = None; ldc_initialized = False
 
 # --- Global State ---
 RP_DISPLAY_BUFFER = deque(maxlen=LDC_DISPLAY_BUFFER_SIZE)
-object_counter = 0 # Tracks the current object number (starts at 0, becomes 1 on first new object)
-shot_counter = 0   # Tracks the shot number for the current object
+object_counter = 0
+shot_counter = 0
 
 # --- GUI Globals ---
-window = None; camera_label = None; controls_frame = None; feedback_label = None
+window = None; camera_label = None; controls_frame = None; feedback_label = None # feedback_label still global
 magnetism_label = None; ldc_label = None; target_var = None
 capture_button = None; calibrate_button = None
 coated_var = None; dilapidated_var = None; degraded_var = None
-new_object_var = None # IntVar for the "New Object" checkbox
-next_filename_label = None # Label to display the next filename
+new_object_var = None
+next_filename_label = None
 label_font = None; readout_font = None; button_font = None
 feedback_font = None; title_font = None; check_font = None
 filename_display_font = None
@@ -114,14 +113,14 @@ filename_display_font = None
 # =========================
 # === File/State Utils ====
 # =========================
+# (Functions get_last_object_index, initialize_global_state, setup_project_directory remain the same as v1.5.0)
 def get_last_object_index(img_dir, prefix):
     """Finds the highest object index based on existing files like data_OBJ_SHOT.jpg."""
     max_obj_index = 0
     if not os.path.isdir(img_dir):
         print(f"Info: Image directory not found ({img_dir}). Starting object index at 1.")
-        return 0 # Return 0, so first object becomes 1
+        return 0
     try:
-        # Regex to capture object number (group 1) and shot number (group 2)
         filename_pattern_str = f"^{prefix}(\\d+)_(\\d+)\\.jpg$"
         filename_pattern = re.compile(filename_pattern_str)
         print(f"Scanning {img_dir} for files matching pattern: {filename_pattern_str}")
@@ -133,16 +132,13 @@ def get_last_object_index(img_dir, prefix):
                 try:
                     obj_index = int(match.group(1))
                     max_obj_index = max(max_obj_index, obj_index)
-                    # print(f"Found match: {filename}, Object: {obj_index}") # Debugging
                 except ValueError:
                     print(f"Warning: Could not parse object index from filename '{filename}'.")
-                    continue # Ignore if number conversion fails
+                    continue
         if not found_files:
              print("No existing data files found matching the pattern.")
-
     except OSError as e:
         print(f"Warning: Could not read image directory {img_dir}: {e}")
-
     print(f"Determined last used object index: {max_obj_index}")
     return max_obj_index
 
@@ -154,13 +150,10 @@ def initialize_global_state():
          return False
     print("Finding last used object index...")
     object_counter = get_last_object_index(IMAGES_PATH, FILENAME_PREFIX)
-    shot_counter = 0 # Shot counter always starts at 0 for a session/new object determination
+    shot_counter = 0
     print(f"Starting with Object Counter = {object_counter} (Next new object will be {object_counter + 1})")
     return True
 
-# =========================
-# === Directory Setup =====
-# =========================
 def setup_project_directory():
     """Creates the main project and images directories if they don't exist."""
     print(f"Ensuring dataset directory exists at: {PROJECT_PATH}")
@@ -175,20 +168,18 @@ def setup_project_directory():
 # =========================
 # === Hardware Setup ===
 # =========================
+# (initialize_hardware remains the same as v1.5.0)
 def initialize_hardware():
     """Initializes Camera, I2C/ADS1115, SPI/GPIO/LDC1101."""
     global camera, i2c, ads, hall_sensor, spi, ldc_initialized
     print("--- Initializing Hardware ---")
-    # Camera
     try:
         camera = cv2.VideoCapture(CAMERA_INDEX)
+        if camera and not camera.isOpened(): raise ValueError("Could not open camera")
     except Exception as e:
-        print(f"Error opening camera: {e}")
+        print(f"Error opening camera {CAMERA_INDEX}: {e}")
         camera = None
-    if camera and not camera.isOpened():
-        print(f"Error: Could not open camera {CAMERA_INDEX}")
-        camera = None
-    # I2C/ADS1115
+
     if I2C_ENABLED:
         try:
             i2c = busio.I2C(board.SCL, board.SDA)
@@ -200,7 +191,7 @@ def initialize_hardware():
             hall_sensor = None
     else:
         print("Skipping I2C/ADS1115 setup.")
-    # SPI/GPIO/LDC1101
+
     if SPI_ENABLED:
         try:
             GPIO.setwarnings(False)
@@ -223,41 +214,33 @@ def initialize_hardware():
             ldc_initialized = False
     else:
         print("Skipping SPI/GPIO/LDC1101 setup.")
-
     print("--- Hardware Initialization Complete ---")
 
 # =========================
 # === LDC1101 Functions ===
 # =========================
-# (LDC functions remain the same as version 1.4.0)
+# (LDC functions remain the same as v1.5.0)
 def ldc_write_register(reg_addr, value):
-    """Writes a byte value to an LDC1101 register via SPI."""
     if not spi: return
     try:
         GPIO.output(CS_PIN, GPIO.LOW)
-        spi.xfer2([reg_addr & 0x7F, value]) # Send write command (MSB=0) + data
+        spi.xfer2([reg_addr & 0x7F, value])
         GPIO.output(CS_PIN, GPIO.HIGH)
-    except Exception as e:
-        print(f"Error writing LDC 0x{reg_addr:02X}: {e}")
+    except Exception as e: print(f"Error writing LDC 0x{reg_addr:02X}: {e}")
 
 def ldc_read_register(reg_addr):
-    """Reads a byte value from an LDC1101 register via SPI."""
     if not spi: return 0
     try:
         GPIO.output(CS_PIN, GPIO.LOW)
-        result = spi.xfer2([reg_addr | 0x80, 0x00]) # Read command (MSB=1) + dummy
+        result = spi.xfer2([reg_addr | 0x80, 0x00])
         GPIO.output(CS_PIN, GPIO.HIGH)
         return result[1]
-    except Exception as e:
-        print(f"Error reading LDC 0x{reg_addr:02X}: {e}")
-        return 0
+    except Exception as e: print(f"Error reading LDC 0x{reg_addr:02X}: {e}"); return 0
 
 def initialize_ldc1101():
-    """Initializes the LDC1101 with custom settings for RP mode."""
     global ldc_initialized
-    ldc_initialized = False # Assume failure until success
+    ldc_initialized = False
     if not spi: return False
-
     chip_id = ldc_read_register(CHIP_ID_REG)
     if chip_id != LDC_CHIP_ID:
         print(f"LDC Chip ID Mismatch: Read 0x{chip_id:02X}, Expected 0x{LDC_CHIP_ID:02X}")
@@ -277,13 +260,11 @@ def initialize_ldc1101():
     return True
 
 def enable_ldc_powermode(mode):
-    """Sets the power mode of the LDC1101."""
     if not spi: return
     ldc_write_register(START_CONFIG_REG, mode)
     time.sleep(0.02)
 
 def enable_ldc_rpmode():
-    """Configures and enables RP conversion mode."""
     if not spi or not ldc_initialized: return
     print("Enabling LDC RP Mode...")
     ldc_write_register(ALT_CONFIG_REG, 0x00)
@@ -292,23 +273,19 @@ def enable_ldc_rpmode():
     print("LDC RP Mode Active.")
 
 def get_ldc_rpdata():
-    """Reads the 16-bit RP data from the LDC1101."""
     if not spi or not ldc_initialized: return None
     try:
         msb = ldc_read_register(RP_DATA_MSB_REG)
         lsb = ldc_read_register(RP_DATA_LSB_REG)
         value = (msb << 8) | lsb
         return value
-    except Exception as e:
-        print(f"Error in get_ldc_rpdata: {e}")
-        return None
+    except Exception as e: print(f"Error in get_ldc_rpdata: {e}"); return None
 
 # =========================
 # === CSV Handling =========
 # =========================
-# (CSV handling remains the same, just receives the new filename format)
+# (append_metadata remains the same as v1.5.0)
 def append_metadata(image_filename, mag_mT, rp_value, delta_rp, target, is_coated, is_dilapidated, is_degraded):
-    """Appends a row of data to the metadata CSV file."""
     file_exists = os.path.isfile(METADATA_PATH)
     try:
         with open(METADATA_PATH, 'a', newline='') as csvfile:
@@ -323,47 +300,37 @@ def append_metadata(image_filename, mag_mT, rp_value, delta_rp, target, is_coate
                 is_coated, is_dilapidated, is_degraded
             ])
         return True
-    except IOError as e:
-        print(f"Error writing metadata: {e}")
-        return False
-    except Exception as e:
-        print(f"Unexpected CSV error: {e}")
-        return False
+    except IOError as e: print(f"Error writing metadata: {e}"); return False
+    except Exception as e: print(f"Unexpected CSV error: {e}"); return False
 
 # ============================
 # === Sensor Reading (Avg) ===
 # ============================
-# (Sensor reading functions remain the same as version 1.4.0)
+# (Sensor reading functions remain the same as v1.5.0)
 def get_averaged_hall_voltage(num_samples=NUM_SAMPLES_PER_UPDATE):
-    """Reads the Hall sensor multiple times and returns the average voltage."""
     if not hall_sensor: return None
-    readings = []
-    for _ in range(num_samples):
-        try:
-            readings.append(hall_sensor.voltage)
-        except Exception: pass
-    if not readings: return None
-    return sum(readings) / len(readings)
+    readings = [hall_sensor.voltage for _ in range(num_samples) if hall_sensor] # More compact reading
+    return sum(readings) / len(readings) if readings else None
 
 def get_averaged_rp_data(num_samples=NUM_SAMPLES_PER_UPDATE):
-    """Reads the LDC RP value multiple times and returns the average."""
     if not ldc_initialized: return None
-    readings = []
-    for _ in range(num_samples):
-        val = get_ldc_rpdata()
-        if val is not None:
-            readings.append(val)
-    if not readings: return None
-    return sum(readings) / len(readings)
+    readings = [get_ldc_rpdata() for _ in range(num_samples)]
+    valid_readings = [r for r in readings if r is not None]
+    return sum(valid_readings) / len(valid_readings) if valid_readings else None
+
 
 # ======================
 # === GUI Functions ===
 # ======================
 
+# (update_next_filename_display, capture_and_save_data, calibrate_sensors,
+#  update_camera_feed, update_magnetism, update_ldc_reading remain the same logic as v1.5.0,
+#  only the GUI setup changes where feedback_label is placed)
+
 def update_next_filename_display():
     """Updates the GUI label showing the next filename to be generated."""
     global next_filename_label, new_object_var, object_counter, shot_counter
-    if not next_filename_label: return # Guard against early calls before GUI setup
+    if not next_filename_label or not new_object_var: return
 
     try:
         is_new = new_object_var.get()
@@ -371,32 +338,29 @@ def update_next_filename_display():
             display_obj = object_counter + 1
             display_shot = 1
         else:
-            # Handle the very first shot case where object_counter might be 0 if no files exist
             display_obj = object_counter if object_counter > 0 else 1
             display_shot = shot_counter + 1
 
         next_fn = f"{FILENAME_PREFIX}{display_obj}_{display_shot}.jpg"
         next_filename_label.config(text=f"Next File: {next_fn}")
     except tk.TclError:
-         # Handle cases where the IntVar might not be fully initialized yet
-         next_filename_label.config(text="Next File: Initializing...")
+         next_filename_label.config(text="Next File: Initializing...") # Should resolve quickly
     except Exception as e:
          print(f"Error updating filename display: {e}")
          next_filename_label.config(text="Next File: Error")
-
 
 def capture_and_save_data():
     """Captures image, reads sensors, updates counters, saves files, appends metadata."""
     global feedback_label, capture_button, window, target_var, IDLE_RP_VALUE
     global coated_var, dilapidated_var, degraded_var
-    global object_counter, shot_counter, new_object_var # Use the new counters
+    global object_counter, shot_counter, new_object_var
 
     if not camera:
         feedback_label.config(text="Camera not available", foreground="#E53935")
         return
 
     capture_button.config(state=tk.DISABLED)
-    feedback_label.config(text="Capturing data...", foreground="#FFA726")
+    feedback_label.config(text="Capturing data...", foreground="#FFA726") # Update status bar
     window.update()
 
     ret, frame = camera.read()
@@ -417,51 +381,36 @@ def capture_and_save_data():
         capture_button.config(state=tk.NORMAL)
         return
 
-    # --- Update Counters and Generate Filename ---
     is_new_object = new_object_var.get()
-
     if is_new_object == 1:
         object_counter += 1
         shot_counter = 1
         print(f"Starting new object series: Object {object_counter}")
     else:
-        # Handle case where it's the very first capture and new_object is unchecked (shouldn't happen with default)
-        if object_counter == 0:
-            object_counter = 1 # Start object 1
-            shot_counter = 1
-            print("First capture, starting Object 1, Shot 1")
-        else:
-            shot_counter += 1
-            print(f"Continuing object {object_counter}, taking shot {shot_counter}")
+        if object_counter == 0: object_counter = 1 # Ensure first object is 1
+        shot_counter += 1
+        print(f"Continuing object {object_counter}, taking shot {shot_counter}")
 
     image_filename = f"{FILENAME_PREFIX}{object_counter}_{shot_counter}.jpg"
     image_save_path = os.path.join(IMAGES_PATH, image_filename)
-    # --- End Counter Update ---
 
-    # Get Sensor Readings
     avg_voltage = get_averaged_hall_voltage(num_samples=NUM_SAMPLES_CALIBRATION)
     current_mag_mT = None
     if avg_voltage is not None:
-        try:
-            adj_v = avg_voltage - IDLE_VOLTAGE
-            current_mag_mT = adj_v / SENSITIVITY_V_PER_MILLITESLA
-        except Exception:
-            current_mag_mT = None
+        try: current_mag_mT = (avg_voltage - IDLE_VOLTAGE) / SENSITIVITY_V_PER_MILLITESLA
+        except Exception: current_mag_mT = None
 
     current_rp_val = get_averaged_rp_data(num_samples=NUM_SAMPLES_CALIBRATION)
     delta_rp = None
     if current_rp_val is not None:
         current_rp_val = int(current_rp_val)
-        if IDLE_RP_VALUE != 0:
-             delta_rp = current_rp_val - IDLE_RP_VALUE
+        if IDLE_RP_VALUE != 0: delta_rp = current_rp_val - IDLE_RP_VALUE
 
-    # Get Target and Condition Flags
     selected_target = target_var.get()
     is_coated = coated_var.get()
     is_dilapidated = dilapidated_var.get()
     is_degraded = degraded_var.get()
 
-    # Save Image
     save_success = False
     try:
         img_resized_for_save.save(image_save_path)
@@ -470,13 +419,10 @@ def capture_and_save_data():
     except Exception as e:
         print(f"Error saving photo: {e}")
         feedback_label.config(text=f"Save Error: {e}", foreground="#E53935")
-        # If save fails, we should ideally revert the counter changes, but that adds complexity.
-        # For now, the counter advances even if save fails.
         capture_button.config(state=tk.NORMAL)
-        update_next_filename_display() # Show next potential filename even on error
+        update_next_filename_display()
         return
 
-    # Append Metadata
     meta_success = append_metadata(
         image_filename, current_mag_mT, current_rp_val, delta_rp, selected_target,
         is_coated, is_dilapidated, is_degraded
@@ -484,68 +430,63 @@ def capture_and_save_data():
 
     if meta_success:
         feedback_label.config(text=f"Data Added: {image_filename}", foreground="#66BB6A")
-        # Set default to "same object" for the *next* capture
-        new_object_var.set(0)
+        new_object_var.set(0) # Default to same object next time
     else:
         feedback_label.config(text="Image saved, metadata FAILED", foreground="#E53935")
-        # Optional: os.remove(image_save_path)
 
-    # Update the display for the *next* potential filename and re-enable button
     update_next_filename_display()
     window.after(1500, lambda: capture_button.config(state=tk.NORMAL))
-    window.after(4000, lambda: feedback_label.config(text="")) # Longer clear delay
+    # Clear feedback from status bar after a longer delay
+    window.after(5000, lambda: feedback_label.config(text=""))
 
 def calibrate_sensors():
     """Calibrates idle voltage for Hall sensor and idle RP value for LDC1101."""
-    # (Calibration logic remains the same as version 1.4.0)
     global IDLE_VOLTAGE, IDLE_RP_VALUE, feedback_label, window
     feedback_text = ""
     feedback_color = "#29B6F6"
+    feedback_label.config(text="Calibrating...", foreground="#FFA726") # Update status bar
+    window.update()
 
+    cal_voltages = []
     if hall_sensor:
-        voltages = []
-        feedback_label.config(text="Calibrating Hall...", foreground="#FFA726")
-        window.update()
         for _ in range(NUM_SAMPLES_CALIBRATION):
             try:
-                voltages.append(hall_sensor.voltage)
+                cal_voltages.append(hall_sensor.voltage)
                 time.sleep(0.05)
             except Exception: pass
-        if voltages:
-            IDLE_VOLTAGE = sum(voltages) / len(voltages)
-            feedback_text += f"Hall Idle: {IDLE_VOLTAGE:.4f} V\n"
+        if cal_voltages:
+            IDLE_VOLTAGE = sum(cal_voltages) / len(cal_voltages)
+            feedback_text += f"Hall Idle: {IDLE_VOLTAGE:.4f} V  "
         else:
-            feedback_text += "Hall Cal Error: No readings\n"
+            feedback_text += "Hall Cal Error  "
             feedback_color = "#FFA726"
     else:
-        feedback_text += "Hall Sensor N/A\n"
+        feedback_text += "Hall N/A  "
         feedback_color = "#FFA726"
 
+    cal_rp_readings = []
     if ldc_initialized:
-        rp_readings = []
-        feedback_label.config(text=feedback_text + "Calibrating LDC...", foreground="#FFA726")
-        window.update()
+        # Update status bar progressively if needed, or just wait till end
+        # feedback_label.config(text=feedback_text + "LDC...", foreground="#FFA726")
+        # window.update()
         for _ in range(NUM_SAMPLES_CALIBRATION):
             val = get_ldc_rpdata()
-            if val is not None:
-                rp_readings.append(val)
+            if val is not None: cal_rp_readings.append(val)
             time.sleep(0.05)
-        if rp_readings:
-            IDLE_RP_VALUE = int(sum(rp_readings) / len(rp_readings))
-            feedback_text += f"LDC RP Idle: {IDLE_RP_VALUE}"
+        if cal_rp_readings:
+            IDLE_RP_VALUE = int(sum(cal_rp_readings) / len(cal_rp_readings))
+            feedback_text += f"LDC Idle: {IDLE_RP_VALUE}"
         else:
-            feedback_text += "LDC Cal Error: No readings\n"
+            feedback_text += "LDC Cal Error"
             feedback_color = "#E53935" if feedback_color != "#FFA726" else "#FFA726"
     else:
-        feedback_text += "LDC Sensor N/A"
+        feedback_text += "LDC N/A"
         feedback_color = "#E53935" if feedback_color != "#FFA726" else "#FFA726"
 
     feedback_label.config(text=feedback_text.strip(), foreground=feedback_color)
-    window.after(4000, lambda: feedback_label.config(text=""))
+    window.after(5000, lambda: feedback_label.config(text="")) # Clear status bar
 
 def update_camera_feed():
-    """Updates the camera feed label in the GUI."""
-    # (Camera feed logic remains the same as version 1.4.0)
     global camera_label, window
     if camera:
         ret, frame = camera.read()
@@ -557,50 +498,38 @@ def update_camera_feed():
             camera_label.configure(image=img_tk)
     else:
          if not hasattr(camera_label, 'no_cam_img'):
-             placeholder = Image.new('RGB', (DISPLAY_IMG_WIDTH, DISPLAY_IMG_HEIGHT), color = '#BDBDBD')
+             placeholder = Image.new('RGB', (DISPLAY_IMG_WIDTH, DISPLAY_IMG_HEIGHT), color='#BDBDBD')
              camera_label.no_cam_img = ImageTk.PhotoImage(placeholder)
          camera_label.configure(image=camera_label.no_cam_img)
     window.after(50, update_camera_feed)
 
 def update_magnetism():
-    """Updates the magnetism reading label in the GUI."""
-    # (Magnetism update logic remains the same as version 1.4.0)
     global magnetism_label, window
     avg_voltage = get_averaged_hall_voltage()
     if avg_voltage is not None:
         try:
-            adj_v = avg_voltage - IDLE_VOLTAGE
-            mag_mT = adj_v / SENSITIVITY_V_PER_MILLITESLA
+            mag_mT = (avg_voltage - IDLE_VOLTAGE) / SENSITIVITY_V_PER_MILLITESLA
+            unit = "mT"
+            value = mag_mT
             if abs(mag_mT) < 1:
-                magnetism_label.config(text=f"{mag_mT * 1000:.2f} µT")
-            else:
-                magnetism_label.config(text=f"{mag_mT:.2f} mT")
-        except Exception:
-            magnetism_label.config(text="Error")
-    else:
-        magnetism_label.config(text="N/A" if not hall_sensor else "Error")
+                unit = "µT"
+                value = mag_mT * 1000
+            magnetism_label.config(text=f"{value:.2f} {unit}")
+        except Exception: magnetism_label.config(text="Error")
+    else: magnetism_label.config(text="N/A" if not hall_sensor else "Error")
     window.after(GUI_UPDATE_INTERVAL_MS, update_magnetism)
 
 def update_ldc_reading():
-    """Updates the LDC1101 RP value label using a moving average buffer."""
-    # (LDC update logic remains the same as version 1.4.0)
     global ldc_label, window, RP_DISPLAY_BUFFER
     avg_rp_val = get_averaged_rp_data()
     display_rp_text = "N/A"
-
-    if not ldc_initialized:
-        display_rp_text = "N/A"
+    if not ldc_initialized: display_rp_text = "N/A"
     elif avg_rp_val is not None:
         RP_DISPLAY_BUFFER.append(avg_rp_val)
-        if len(RP_DISPLAY_BUFFER) > 0:
-            moving_avg_rp = sum(RP_DISPLAY_BUFFER) / len(RP_DISPLAY_BUFFER)
-            display_rp_text = f"{int(moving_avg_rp)}"
-        else:
-            display_rp_text = "..."
-    else:
-        RP_DISPLAY_BUFFER.clear()
-        display_rp_text = "Error"
-
+        if RP_DISPLAY_BUFFER:
+            display_rp_text = f"{int(sum(RP_DISPLAY_BUFFER) / len(RP_DISPLAY_BUFFER))}"
+        else: display_rp_text = "..."
+    else: RP_DISPLAY_BUFFER.clear(); display_rp_text = "Error"
     ldc_label.config(text=display_rp_text)
     window.after(GUI_UPDATE_INTERVAL_MS, update_ldc_reading)
 
@@ -608,15 +537,15 @@ def update_ldc_reading():
 # === GUI Setup ========
 # ======================
 def setup_gui():
-    """Sets up the Tkinter GUI elements."""
+    """Sets up the Tkinter GUI elements, with feedback label in a status bar."""
     global window, camera_label, controls_frame, feedback_label, magnetism_label, ldc_label
     global target_var, capture_button, calibrate_button, coated_var, dilapidated_var, degraded_var
-    global new_object_var, next_filename_label # GUI elements for new naming scheme
+    global new_object_var, next_filename_label
     global label_font, readout_font, button_font, feedback_font, title_font, check_font, filename_display_font
 
     window = tk.Tk()
-    window.title("Sensor Data Acquisition Tool v1.5.0") # Updated version
-    window.geometry("1100x720") # Slightly taller for new elements
+    window.title("Sensor Data Acquisition Tool v1.5.1") # Updated version
+    window.geometry("1100x700") # Initial size, might not need adjustment now
 
     # --- Style & Fonts ---
     style = ttk.Style()
@@ -627,50 +556,57 @@ def setup_gui():
     label_font = tkFont.Font(family="Helvetica", size=11)
     readout_font = tkFont.Font(family="Consolas", size=14, weight="bold")
     button_font = tkFont.Font(family="Helvetica", size=11, weight="bold")
-    feedback_font = tkFont.Font(family="Helvetica", size=10)
+    feedback_font = tkFont.Font(family="Helvetica", size=10) # Font for status bar
     check_font = tkFont.Font(family="Helvetica", size=10)
-    filename_display_font = tkFont.Font(family="Consolas", size=9) # Font for filename display
-
+    filename_display_font = tkFont.Font(family="Consolas", size=9)
 
     style.configure("TLabel", font=label_font, padding=3)
     style.configure("TButton", font=button_font, padding=(10, 8))
     style.configure("TMenubutton", font=label_font, padding=5)
     style.configure("TLabelframe", padding=10)
     style.configure("TLabelframe.Label", font=tkFont.Font(family="Helvetica", size=12, weight="bold"))
-    style.configure("Feedback.TLabel", font=feedback_font, padding=5)
+    # Removed Feedback.TLabel style as it's now a standard label in status bar
     style.configure("Readout.TLabel", font=readout_font, padding=(5, 2))
     style.configure("Unit.TLabel", font=label_font, padding=(0, 2))
     style.configure("TCheckbutton", font=check_font, padding=3)
-    style.configure("Filename.TLabel", font=filename_display_font, padding=(0, 5)) # Style for filename label
+    style.configure("Filename.TLabel", font=filename_display_font, padding=(0, 5))
+    style.configure("Status.TFrame", padding=0) # Style for status bar frame if needed
 
-    # --- Main Frame ---
+
+    # --- Main Content Frame ---
+    # This frame holds the camera and controls, and expands
     main_frame = ttk.Frame(window, padding="15 15 15 15")
-    main_frame.pack(fill=tk.BOTH, expand=True)
-    main_frame.columnconfigure(0, weight=3)
-    main_frame.columnconfigure(1, weight=1)
-    main_frame.rowconfigure(0, weight=1)
+    main_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True) # Pack at top, allow expansion
+    main_frame.columnconfigure(0, weight=3) # Camera feed column wider
+    main_frame.columnconfigure(1, weight=1) # Controls column narrower
+    main_frame.rowconfigure(0, weight=1) # Allow row to expand vertically
 
-    # --- Camera Feed Label (Left) ---
+    # --- Status Bar Frame ---
+    # This frame holds the feedback label at the bottom
+    status_bar_frame = ttk.Frame(window, relief=tk.SUNKEN, style="Status.TFrame")
+    status_bar_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=0, pady=0) # Pack at bottom, fill horizontally
+
+    # --- Feedback Label (Now in Status Bar) ---
+    feedback_label = ttk.Label(status_bar_frame, text="", font=feedback_font, anchor="w")
+    feedback_label.pack(side=tk.LEFT, padx=5, pady=2) # Pack left within status bar
+
+
+    # --- Camera Feed Label (Inside main_frame, Left) ---
     camera_label = ttk.Label(main_frame, text="Initializing Camera...", anchor="center", borderwidth=1, relief="sunken")
     camera_label.grid(row=0, column=0, padx=(0, 15), pady=0, sticky="nsew")
 
-    # --- Controls Frame (Right) ---
+    # --- Controls Frame (Inside main_frame, Right) ---
     controls_frame = ttk.Frame(main_frame)
     controls_frame.grid(row=0, column=1, padx=(0, 0), pady=0, sticky="nsew")
-    controls_frame.columnconfigure(0, weight=1)
+    controls_frame.columnconfigure(0, weight=1) # Allow content to expand horizontally
+
+    # Row counter for controls_frame (starts at 0 as feedback is removed)
     controls_row_idx = 0
 
-    # --- Feedback Area ---
-    feedback_label_row_idx = controls_row_idx
-    feedback_label = ttk.Label(controls_frame, text="", style="Feedback.TLabel", anchor="w", wraplength=350)
-    feedback_label.grid(row=feedback_label_row_idx, column=0, sticky="ew", pady=(0, 10))
-    feedback_row_min_height = int(feedback_font.metrics('linespace') * 3.0)
-    controls_frame.rowconfigure(feedback_label_row_idx, minsize=feedback_row_min_height)
-    controls_row_idx += 1
-
     # --- Sensor Readings Group ---
+    # Reduced pady slightly
     readings_frame = ttk.Labelframe(controls_frame, text=" Sensor Readings ", padding="15 10 15 10")
-    readings_frame.grid(row=controls_row_idx, column=0, sticky="new", pady=(0, 15))
+    readings_frame.grid(row=controls_row_idx, column=0, sticky="new", pady=(0, 10)) # Reduced bottom padding
     controls_row_idx += 1
     readings_frame.columnconfigure(0, weight=0)
     readings_frame.columnconfigure(1, weight=1)
@@ -682,8 +618,9 @@ def setup_gui():
     ldc_label.grid(row=1, column=1, sticky="ew", pady=(5,0))
 
     # --- Data Capture Group ---
+    # Reduced pady slightly
     actions_frame = ttk.Labelframe(controls_frame, text=" Data Capture ", padding="15 10 15 15")
-    actions_frame.grid(row=controls_row_idx, column=0, sticky="new", pady=(0, 15))
+    actions_frame.grid(row=controls_row_idx, column=0, sticky="new", pady=(0, 10)) # Reduced bottom padding
     controls_row_idx += 1
     actions_frame.columnconfigure(0, weight=1)
     action_row_idx = 0
@@ -716,40 +653,40 @@ def setup_gui():
     cb_degraded.grid(row=action_row_idx, column=0, sticky="w", pady=(0, 10))
     action_row_idx += 1
 
-    # --- New Object Control ---
-    new_object_var = tk.IntVar(value=1) # Default to starting a new object
+    # New Object Control
+    new_object_var = tk.IntVar(value=1)
     cb_new_object = ttk.Checkbutton(
         actions_frame,
         text="Start New Object Series?",
         variable=new_object_var,
         onvalue=1,
         offvalue=0,
-        command=update_next_filename_display # Update display when checked/unchecked
+        command=update_next_filename_display
     )
     cb_new_object.grid(row=action_row_idx, column=0, sticky="w", pady=(5, 5))
     action_row_idx += 1
 
-    # --- Next Filename Display ---
+    # Next Filename Display
     next_filename_label = ttk.Label(actions_frame, text="Next File: ...", style="Filename.TLabel")
     next_filename_label.grid(row=action_row_idx, column=0, sticky="w", pady=(0, 10))
     action_row_idx += 1
 
-
     # Separator
     separator = ttk.Separator(actions_frame, orient='horizontal')
-    separator.grid(row=action_row_idx, column=0, sticky='ew', pady=(0, 15))
+    separator.grid(row=action_row_idx, column=0, sticky='ew', pady=(5, 10)) # Adjusted padding
     action_row_idx += 1
 
     # Buttons
     capture_button = ttk.Button(actions_frame, text="Capture & Add Data", command=capture_and_save_data)
-    capture_button.grid(row=action_row_idx, column=0, sticky="ew", pady=(0, 8))
+    capture_button.grid(row=action_row_idx, column=0, sticky="ew", pady=(0, 5)) # Reduced padding
     action_row_idx += 1
     calibrate_button = ttk.Button(actions_frame, text="Calibrate Sensors", command=calibrate_sensors)
     calibrate_button.grid(row=action_row_idx, column=0, sticky="ew")
     action_row_idx += 1
 
-    # Initialize the filename display
+    # Initialize the filename display after everything is created
     update_next_filename_display()
+
 
 # ==========================
 # === Main Execution =======
@@ -760,12 +697,15 @@ def run_application():
     if not initialize_global_state():
         return
 
-    setup_gui()
+    setup_gui() # Creates GUI, including status bar and feedback label
 
+    # Set initial GUI states
     if not camera: camera_label.configure(text="Camera Failed")
     if not hall_sensor: magnetism_label.config(text="N/A")
     if not ldc_initialized: ldc_label.config(text="N/A")
+    feedback_label.config(text="Ready.") # Initial status message
 
+    # Start the update loops
     update_camera_feed()
     update_magnetism()
     update_ldc_reading()
@@ -776,7 +716,7 @@ def run_application():
 # --- Cleanup ---
 def cleanup_resources():
     """Releases hardware resources."""
-    # (Cleanup logic remains the same as version 1.4.0)
+    # (Cleanup remains the same as v1.5.0)
     print("Cleaning up resources...")
     if camera and camera.isOpened():
         print("Releasing camera...")
