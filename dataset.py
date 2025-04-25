@@ -62,7 +62,7 @@ DISPLAY_IMG_HEIGHT = 480
 HALL_ADC_CHANNEL = ADS.P0 if I2C_ENABLED else None
 SENSITIVITY_V_PER_TESLA = 0.0004
 SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000
-IDLE_VOLTAGE = 1.7256
+IDLE_VOLTAGE = 1.5675
 
 # Inductive Sensor (LDC1101)
 # (Constants remain the same)
@@ -194,7 +194,7 @@ def initialize_ldc1101():
     if not spi: return False
     chip_id = ldc_read_register(CHIP_ID_REG)
     if chip_id != LDC_CHIP_ID: print(f"LDC Mismatch: Read 0x{chip_id:02X}, Expected 0x{LDC_CHIP_ID:02X}"); return False
-    print("Configuring LDC1101..."); ldc_write_register(RP_SET_REG, 0x1B); ldc_write_register(TC1_REG, 0x80); ldc_write_register(TC2_REG, 0x88); ldc_write_register(DIG_CONFIG_REG, 0x07); ldc_write_register(ALT_CONFIG_REG, 0x00); ldc_write_register(D_CONF_REG, 0x00); ldc_write_register(INTB_MODE_REG, 0x00); ldc_write_register(START_CONFIG_REG, SLEEP_MODE); time.sleep(0.05); print("LDC1101 Configured."); ldc_initialized = True; return True
+    print("Configuring LDC1101..."); ldc_write_register(RP_SET_REG, 0x07); ldc_write_register(TC1_REG, 0x90); ldc_write_register(TC2_REG, 0xA0); ldc_write_register(DIG_CONFIG_REG, 0x03); ldc_write_register(ALT_CONFIG_REG, 0x00); ldc_write_register(D_CONF_REG, 0x00); ldc_write_register(INTB_MODE_REG, 0x00); ldc_write_register(START_CONFIG_REG, SLEEP_MODE); time.sleep(0.05); print("LDC1101 Configured."); ldc_initialized = True; return True
 def enable_ldc_powermode(mode):
     if not spi: return; ldc_write_register(START_CONFIG_REG, mode); time.sleep(0.02)
 def enable_ldc_rpmode():
