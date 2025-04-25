@@ -1,6 +1,6 @@
-# CODE 1 Modified - Integrating LDC fixes from CODE 2
+# CODE 1 Modified - Integrating LDC fixes and Optimizing for Speed
 # Combined Code: Camera, Magnetism, Inductance Measurement with Dataset Creation
-# Version: 1.6.1_mod1 - Integrated LDC fixes (SPI speed, R/W delays)
+# Version: 1.6.1_mod2 - Optimized speed (removed LDC R/W delays, increased SPI speed, faster GUI updates)
 
 import tkinter as tk
 from tkinter import ttk
@@ -17,7 +17,6 @@ from collections import deque
 import re
 
 # --- I2C/ADS1115 Imports ---
-# (Imports remain the same)
 try:
     import board
     import busio
@@ -29,7 +28,6 @@ except ImportError:
     I2C_ENABLED = False
 
 # --- SPI/LDC1101 Imports ---
-# (Imports remain the same)
 try:
     import spidev
     import RPi.GPIO as GPIO
@@ -44,11 +42,12 @@ except ImportError:
 # ==================================
 
 # Accuracy/Stability/Speed
-NUM_SAMPLES_PER_UPDATE = 3
+NUM_SAMPLES_PER_UPDATE = 3  # Keep averaging for stability
 NUM_SAMPLES_CALIBRATION = 5
-GUI_UPDATE_INTERVAL_MS = 250
+GUI_UPDATE_INTERVAL_MS = 100 # <<< MODIFIED: Faster GUI refresh rate (was 250)
+CAMERA_UPDATE_INTERVAL_MS = 30 # <<< MODIFIED: Faster camera refresh target (was 50)
 LDC_DISPLAY_BUFFER_SIZE = 5
-MAGNETISM_FILTER_ALPHA = 0.2  # Smoothing factor for EMA filter (0 < alpha <= 1). Smaller = more smoothing.
+MAGNETISM_FILTER_ALPHA = 0.2
 
 # Image Saving
 SAVE_IMG_WIDTH = 224
@@ -63,11 +62,11 @@ DISPLAY_IMG_HEIGHT = 480
 HALL_ADC_CHANNEL = ADS.P0 if I2C_ENABLED else None
 SENSITIVITY_V_PER_TESLA = 0.0004
 SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000
-IDLE_VOLTAGE = 1.7348
+IDLE_VOLTAGE = 1.7348 # Will be recalibrated
 
 # Inductive Sensor (LDC1101)
-# <<< MODIFIED: Changed SPI Speed to match working CODE 2 >>>
-SPI_BUS = 0; SPI_DEVICE = 0; SPI_SPEED = 50000; SPI_MODE = 0b00 # 50kHz
+# <<< MODIFIED: Increased SPI Speed back (was 50000) >>>
+SPI_BUS = 0; SPI_DEVICE = 0; SPI_SPEED = 500000; SPI_MODE = 0b00 # 500kHz
 CS_PIN = 8; LDC_CHIP_ID = 0xD4
 START_CONFIG_REG, RP_SET_REG, TC1_REG, TC2_REG, DIG_CONFIG_REG = 0x0B, 0x01, 0x02, 0x03, 0x04
 ALT_CONFIG_REG, D_CONF_REG, INTB_MODE_REG = 0x05, 0x0C, 0x0A
@@ -76,10 +75,9 @@ ACTIVE_CONVERSION_MODE, SLEEP_MODE = 0x00, 0x01
 
 
 # Calibration
-IDLE_RP_VALUE = 0
+IDLE_RP_VALUE = 0 # Will be recalibrated
 
-# Dataset / File Saving
-# (Constants remain the same)
+# Dataset / File Saving (Constants remain the same)
 PROJECT_FOLDER_NAME = "Project_Dataset"
 IMAGES_FOLDER_NAME = "images"
 METADATA_FILENAME = "metadata.csv"
@@ -106,10 +104,9 @@ spi = None; ldc_initialized = False
 RP_DISPLAY_BUFFER = deque(maxlen=LDC_DISPLAY_BUFFER_SIZE)
 object_counter = 0
 shot_counter = 0
-previous_filtered_mag_mT = None # State for the EMA filter
+previous_filtered_mag_mT = None
 
-# GUI Globals
-# (Globals remain the same)
+# GUI Globals (Globals remain the same)
 window = None; camera_label = None; controls_frame = None
 magnetism_label = None; ldc_label = None; target_var = None
 capture_button = None; calibrate_button = None
@@ -139,11 +136,11 @@ def get_last_object_index(img_dir, prefix):
     return max_obj_index
 
 def initialize_global_state():
-    global object_counter, shot_counter, previous_filtered_mag_mT # Add filter state reset
+    global object_counter, shot_counter, previous_filtered_mag_mT
     if not setup_project_directory(): return False
     object_counter = get_last_object_index(IMAGES_PATH, FILENAME_PREFIX)
     shot_counter = 0
-    previous_filtered_mag_mT = None # Reset filter state on init
+    previous_filtered_mag_mT = None
     print(f"Starting with Object Counter = {object_counter} (Next new object will be {object_counter + 1})")
     return True
 
@@ -154,24 +151,32 @@ def setup_project_directory():
 # =========================
 # === Hardware Setup ===
 # =========================
-# (Function remains the same)
+# (Function remains the same, relies on updated constants/functions)
 def initialize_hardware():
     global camera, i2c, ads, hall_sensor, spi, ldc_initialized
     print("--- Initializing Hardware ---")
     try:
         camera = cv2.VideoCapture(CAMERA_INDEX)
+        # Optional: Set camera properties for potentially faster capture if needed
+        # camera.set(cv2.CAP_PROP_FRAME_WIDTH, DISPLAY_IMG_WIDTH)
+        # camera.set(cv2.CAP_PROP_FRAME_HEIGHT, DISPLAY_IMG_HEIGHT)
+        # camera.set(cv2.CAP_PROP_FPS, 30) # Request FPS
         if camera and not camera.isOpened(): raise ValueError("Could not open camera")
+        else: print(f"Camera {CAMERA_INDEX} opened.")
     except Exception as e: print(f"Error opening camera {CAMERA_INDEX}: {e}"); camera = None
     if I2C_ENABLED:
         try:
             i2c = busio.I2C(board.SCL, board.SDA); ads = ADS.ADS1115(i2c)
+            # Optional: Set ADS1115 data rate/gain if specific performance needed
+            # ads.gain = 1 # Example gain setting
+            # ads.data_rate = 860 # Example: Max data rate for ADS1115
             hall_sensor = AnalogIn(ads, HALL_ADC_CHANNEL); print("ADS1115 Initialized.")
         except Exception as e: print(f"Error initializing I2C/ADS1115: {e}"); hall_sensor = None
     else: print("Skipping I2C/ADS1115 setup.")
     if SPI_ENABLED:
         try:
             GPIO.setwarnings(False); GPIO.setmode(GPIO.BCM); GPIO.setup(CS_PIN, GPIO.OUT); GPIO.output(CS_PIN, GPIO.HIGH); print("GPIO Initialized.")
-            spi = spidev.SpiDev(); spi.open(SPI_BUS, SPI_DEVICE); spi.max_speed_hz = SPI_SPEED; spi.mode = SPI_MODE; print(f"SPI Initialized (Bus={SPI_BUS}, Dev={SPI_DEVICE}, Speed={SPI_SPEED}Hz).") # <<< Added Speed log
+            spi = spidev.SpiDev(); spi.open(SPI_BUS, SPI_DEVICE); spi.max_speed_hz = SPI_SPEED; spi.mode = SPI_MODE; print(f"SPI Initialized (Bus={SPI_BUS}, Dev={SPI_DEVICE}, Speed={SPI_SPEED}Hz).")
             if initialize_ldc1101(): enable_ldc_rpmode()
             else: print("LDC1101 Initialization Failed.")
         except Exception as e: print(f"Error initializing GPIO/SPI: {e}"); spi = None; ldc_initialized = False
@@ -182,36 +187,34 @@ def initialize_hardware():
 # === LDC1101 Functions ===
 # =========================
 
-# <<< MODIFIED: Replaced with CODE 2's write function (includes delays) >>>
+# <<< MODIFIED: Removed internal time.sleep() calls >>>
 def ldc_write_register(reg_addr, value):
     if not spi: return
     try:
         GPIO.output(CS_PIN, GPIO.LOW)
-        time.sleep(0.01) # Reduced delay slightly from 0.1 to potentially improve speed
         spi.xfer2([reg_addr & 0x7F, value]) # Send write command (MSB = 0)
-        time.sleep(0.01) # Reduced delay slightly from 0.1
         GPIO.output(CS_PIN, GPIO.HIGH)
     except Exception as e:
         print(f"Error writing LDC 0x{reg_addr:02X}: {e}")
-        # Consider adding GPIO.output(CS_PIN, GPIO.HIGH) in a finally block if errors are frequent
+        try: GPIO.output(CS_PIN, GPIO.HIGH) # Ensure CS goes high on error
+        except: pass
 
-# <<< MODIFIED: Replaced with CODE 2's read function (includes delays) >>>
+# <<< MODIFIED: Removed internal time.sleep() calls >>>
 def ldc_read_register(reg_addr):
     if not spi: return 0
-    result = [0, 0] # Default value in case of error
+    result = [0, 0]
     try:
         GPIO.output(CS_PIN, GPIO.LOW)
-        time.sleep(0.01) # Reduced delay slightly from 0.1
         result = spi.xfer2([reg_addr | 0x80, 0x00]) # Send read command (MSB = 1)
-        time.sleep(0.01) # Reduced delay slightly from 0.1
         GPIO.output(CS_PIN, GPIO.HIGH)
-        return result[1] # Return data from the register
+        return result[1]
     except Exception as e:
         print(f"Error reading LDC 0x{reg_addr:02X}: {e}")
-        # Consider adding GPIO.output(CS_PIN, GPIO.HIGH) in a finally block if errors are frequent
-        return 0 # Return 0 on error
+        try: GPIO.output(CS_PIN, GPIO.HIGH) # Ensure CS goes high on error
+        except: pass
+        return 0
 
-# <<< MODIFIED: Added delay at the end of initialization >>>
+# <<< MODIFIED: Reduced delay at the end of initialization >>>
 def initialize_ldc1101():
     global ldc_initialized; ldc_initialized = False;
     if not spi: return False
@@ -221,16 +224,15 @@ def initialize_ldc1101():
             print(f"LDC Mismatch: Read 0x{chip_id:02X}, Expected 0x{LDC_CHIP_ID:02X}")
             return False
         print("Configuring LDC1101...")
-        # Using standard RP mode config from original CODE 1
         ldc_write_register(RP_SET_REG, 0x07)
         ldc_write_register(TC1_REG, 0x90)
         ldc_write_register(TC2_REG, 0xA0)
         ldc_write_register(DIG_CONFIG_REG, 0x03)
-        ldc_write_register(ALT_CONFIG_REG, 0x00) # Keep 0x00 for standard RP
-        ldc_write_register(D_CONF_REG, 0x00)     # Keep 0x00 for standard RP
+        ldc_write_register(ALT_CONFIG_REG, 0x00)
+        ldc_write_register(D_CONF_REG, 0x00)
         ldc_write_register(INTB_MODE_REG, 0x00)
-        ldc_write_register(START_CONFIG_REG, SLEEP_MODE) # Go to sleep after config
-        time.sleep(0.1) # <<< Added delay based on CODE 2's init
+        ldc_write_register(START_CONFIG_REG, SLEEP_MODE)
+        time.sleep(0.01) # <<< Reduced delay (was 0.1) - minimal settling time
         print("LDC1101 Configured and in Sleep Mode.")
         ldc_initialized = True
         return True
@@ -239,35 +241,32 @@ def initialize_ldc1101():
         ldc_initialized = False
         return False
 
-# <<< MODIFIED: Increased delay in power mode function slightly >>>
+# <<< MODIFIED: Reduced delay in power mode function >>>
 def enable_ldc_powermode(mode):
-    if not spi or not ldc_initialized: return; # <<< Added check for initialized
+    if not spi or not ldc_initialized: return;
     mode_str = "ACTIVE" if mode == ACTIVE_CONVERSION_MODE else "SLEEP" if mode == SLEEP_MODE else "SHUTDOWN"
-    print(f"Setting LDC Power Mode to: {mode_str} (0x{mode:02X})")
+    # print(f"Setting LDC Power Mode to: {mode_str} (0x{mode:02X})") # Less verbose
     ldc_write_register(START_CONFIG_REG, mode)
-    time.sleep(0.05) # <<< Increased delay slightly
+    time.sleep(0.01) # <<< Reduced delay (was 0.05)
 
-# <<< MODIFIED: Added more debug prints and ensured checks >>>
+# (enable_ldc_rpmode remains logically the same, calls faster functions)
 def enable_ldc_rpmode():
     if not spi or not ldc_initialized:
         print("Cannot enable RP mode: SPI or LDC not initialized.")
         return;
-    print("Enabling LDC RP Mode (ALT=0x00, D_CONF=0x00)...")
-    # Ensure correct registers for standard RP mode are set before activating
+    # print("Enabling LDC RP Mode (ALT=0x00, D_CONF=0x00)...") # Less verbose
     ldc_write_register(ALT_CONFIG_REG, 0x00)
     ldc_write_register(D_CONF_REG, 0x00)
     enable_ldc_powermode(ACTIVE_CONVERSION_MODE)
-    print("LDC RP Mode potentially Active (verify readings).")
+    # print("LDC RP Mode potentially Active (verify readings).") # Less verbose
 
+# (get_ldc_rpdata remains logically the same, calls faster functions)
 def get_ldc_rpdata():
     if not spi or not ldc_initialized: return None
     try:
-        # Reading MSB then LSB is correct
         msb = ldc_read_register(RP_DATA_MSB_REG)
         lsb = ldc_read_register(RP_DATA_LSB_REG)
-        rp_value = (msb << 8) | lsb
-        # print(f"Read RP: MSB=0x{msb:02X}, LSB=0x{lsb:02X}, Value={rp_value}") # Optional debug
-        return rp_value
+        return (msb << 8) | lsb
     except Exception as e:
         print(f"Error in get_ldc_rpdata: {e}")
         return None
@@ -293,28 +292,26 @@ def append_metadata(image_filename, mag_mT, rp_value, delta_rp, target, is_coate
 # ============================
 # === Sensor Reading (Avg) ===
 # ============================
-# (Functions remain the same)
+
+# <<< MODIFIED: Removed internal time.sleep() in loop >>>
 def get_averaged_hall_voltage(num_samples=NUM_SAMPLES_PER_UPDATE):
     if not hall_sensor: return None
     readings = []
     for _ in range(num_samples):
         try:
+            # Read voltage directly without extra sleep
             if hall_sensor: readings.append(hall_sensor.voltage)
-            time.sleep(0.01) # Small delay between samples
         except Exception as e:
             print(f"Warning: Error reading Hall sensor voltage: {e}")
-            return None # Abort averaging if one read fails
+            # Maybe return immediately if a read fails? Or continue? Decide based on need.
+            return None # Let's be conservative and return None if any read fails
     return sum(readings) / len(readings) if readings else None
 
+# (get_averaged_rp_data remains logically the same, calls faster get_ldc_rpdata)
 def get_averaged_rp_data(num_samples=NUM_SAMPLES_PER_UPDATE):
     if not ldc_initialized: return None
-    readings = []
-    for _ in range(num_samples):
-        rp_val = get_ldc_rpdata()
-        if rp_val is not None:
-             readings.append(rp_val)
-        # No sleep here, get_ldc_rpdata now has internal delays
-    valid_readings = [r for r in readings if r is not None] # Ensure None isn't averaged
+    readings = [get_ldc_rpdata() for _ in range(num_samples)]
+    valid_readings = [r for r in readings if r is not None]
     return sum(valid_readings) / len(valid_readings) if valid_readings else None
 
 
@@ -335,21 +332,34 @@ def update_next_filename_display():
     except tk.TclError: next_filename_label.config(text="Next: ...")
     except Exception as e: print(f"Error updating filename display: {e}"); next_filename_label.config(text="Next: Error")
 
-# (capture_and_save_data remains the same - uses unfiltered data for saving)
+# (capture_and_save_data remains the same)
 def capture_and_save_data():
     global capture_button, window, target_var, IDLE_RP_VALUE
     global coated_var, dilapidated_var, degraded_var
     global object_counter, shot_counter, new_object_var
-    if not camera: messagebox.showerror("Camera Error", "Camera not available."); return
+    # Disable button immediately
     capture_button.config(state=tk.DISABLED)
+    if not camera:
+        messagebox.showerror("Camera Error", "Camera not available.")
+        capture_button.config(state=tk.NORMAL)
+        return
     ret, frame = camera.read()
-    if not ret: messagebox.showerror("Capture Error", "Failed to capture photo."); capture_button.config(state=tk.NORMAL); return
+    if not ret:
+        messagebox.showerror("Capture Error", "Failed to capture photo.")
+        capture_button.config(state=tk.NORMAL)
+        return
+
+    # Process image
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB); img_raw = Image.fromarray(frame_rgb)
     try:
         img_resized_for_save = img_raw.resize((SAVE_IMG_WIDTH, SAVE_IMG_HEIGHT), Image.Resampling.LANCZOS)
     except AttributeError: img_resized_for_save = img_raw.resize((SAVE_IMG_WIDTH, SAVE_IMG_HEIGHT), Image.LANCZOS)
-    except Exception as e: messagebox.showerror("Resize Error", f"Error resizing image: {e}"); capture_button.config(state=tk.NORMAL); return
+    except Exception as e:
+        messagebox.showerror("Resize Error", f"Error resizing image: {e}")
+        capture_button.config(state=tk.NORMAL)
+        return
 
+    # Determine filename
     is_new_object = new_object_var.get()
     if is_new_object == 1: object_counter += 1; shot_counter = 1
     else:
@@ -358,12 +368,14 @@ def capture_and_save_data():
     image_filename = f"{FILENAME_PREFIX}{object_counter}_{shot_counter}.jpg"
     image_save_path = os.path.join(IMAGES_PATH, image_filename)
 
-    # --- Get UNFILTERED sensor data for saving (using more samples like calibration) ---
+    # --- Get sensor data for saving (using calibration sample count for better accuracy) ---
+    # Do this *after* potentially time-consuming image capture/processing
     avg_voltage = get_averaged_hall_voltage(num_samples=NUM_SAMPLES_CALIBRATION)
     current_mag_mT = None
     if avg_voltage is not None:
         try: current_mag_mT = (avg_voltage - IDLE_VOLTAGE) / SENSITIVITY_V_PER_MILLITESLA
-        except Exception: current_mag_mT = None
+        except Exception: current_mag_mT = None # Keep as None on calculation error
+
     current_rp_val = get_averaged_rp_data(num_samples=NUM_SAMPLES_CALIBRATION)
     delta_rp = None
     if current_rp_val is not None:
@@ -371,143 +383,176 @@ def capture_and_save_data():
         if IDLE_RP_VALUE != 0: delta_rp = current_rp_val - IDLE_RP_VALUE
     # --- End sensor data for saving ---
 
+    # Get metadata from GUI
     selected_target = target_var.get(); is_coated = coated_var.get(); is_dilapidated = dilapidated_var.get(); is_degraded = degraded_var.get()
+
+    # Save image first
     try:
         img_resized_for_save.save(image_save_path); print(f"Image saved: {image_save_path}")
-    except Exception as e: messagebox.showerror("Save Error", f"Error saving photo:\n{e}"); capture_button.config(state=tk.NORMAL); update_next_filename_display(); return
+    except Exception as e:
+        messagebox.showerror("Save Error", f"Error saving photo:\n{e}")
+        capture_button.config(state=tk.NORMAL) # Re-enable button on save error
+        update_next_filename_display() # Keep filename consistent
+        return
 
+    # Append metadata
     meta_success = append_metadata(image_filename, current_mag_mT, current_rp_val, delta_rp, selected_target, is_coated, is_dilapidated, is_degraded)
     if meta_success:
-        messagebox.showinfo("Success", f"Data Added: {image_filename}"); new_object_var.set(0)
-    else: messagebox.showwarning("Metadata Error", f"Image '{image_filename}' saved,\nbut failed to write metadata.")
-    update_next_filename_display()
-    window.after(500, lambda: capture_button.config(state=tk.NORMAL))
+        messagebox.showinfo("Success", f"Data Added: {image_filename}"); new_object_var.set(0) # Assume next shot is same object
+    else:
+        messagebox.showwarning("Metadata Error", f"Image '{image_filename}' saved,\nbut failed to write metadata.")
 
-# (calibrate_sensors remains the same)
+    # Update display and re-enable button after a short delay
+    update_next_filename_display()
+    # Use lambda to prevent the function from executing immediately
+    window.after(200, lambda: capture_button.config(state=tk.NORMAL))
+
+
+# (calibrate_sensors remains the same, calls faster averaging functions)
 def calibrate_sensors():
-    global IDLE_VOLTAGE, IDLE_RP_VALUE, window, previous_filtered_mag_mT # Access filter state
+    global IDLE_VOLTAGE, IDLE_RP_VALUE, window, previous_filtered_mag_mT
+    print("Starting Calibration...")
+    # Temporarily disable buttons during calibration
+    calibrate_button.config(state=tk.DISABLED)
+    capture_button.config(state=tk.DISABLED)
+
     hall_results = "Hall Sensor N/A"; hall_error = False
     if hall_sensor:
-        voltages = [v for v in (hall_sensor.voltage if hall_sensor else None for _ in range(NUM_SAMPLES_CALIBRATION)) if v is not None and time.sleep(0.05) is None] # Compact reading with check
-        if voltages: IDLE_VOLTAGE = sum(voltages) / len(voltages); hall_results = f"Hall Idle: {IDLE_VOLTAGE:.4f} V"
-        else: hall_results = "Hall Cal Error: No readings"; hall_error = True
+        # Use the averaging function directly
+        avg_v = get_averaged_hall_voltage(num_samples=NUM_SAMPLES_CALIBRATION)
+        if avg_v is not None:
+            IDLE_VOLTAGE = avg_v
+            hall_results = f"Hall Idle: {IDLE_VOLTAGE:.4f} V"
+        else:
+            hall_results = "Hall Cal Error: No readings"
+            hall_error = True
+            IDLE_VOLTAGE = 0 # Reset on error
     ldc_results = "LDC Sensor N/A"; ldc_error = False
     if ldc_initialized:
-        # Use the averaging function directly for calibration
-        rp_cal_value = get_averaged_rp_data(num_samples=NUM_SAMPLES_CALIBRATION)
-        if rp_cal_value is not None:
-            IDLE_RP_VALUE = int(rp_cal_value)
+        avg_rp = get_averaged_rp_data(num_samples=NUM_SAMPLES_CALIBRATION)
+        if avg_rp is not None:
+            IDLE_RP_VALUE = int(avg_rp)
             ldc_results = f"LDC Idle: {IDLE_RP_VALUE}"
-        else: ldc_results = "LDC Cal Error: No readings"; ldc_error = True
+        else:
+            ldc_results = "LDC Cal Error: No readings"
+            ldc_error = True
+            IDLE_RP_VALUE = 0 # Reset on error
 
     # Reset the EMA filter state after calibration
     previous_filtered_mag_mT = None
     print("Magnetism filter state reset due to calibration.")
-    print(f"Calibration Results: {hall_results}, {ldc_results}") # Log results
+    print(f"Calibration Results: {hall_results}, {ldc_results}")
 
+    # Re-enable buttons
+    calibrate_button.config(state=tk.NORMAL)
+    capture_button.config(state=tk.NORMAL)
+
+    # Show results
     final_message = f"{hall_results}\n{ldc_results}"
     if hall_error or ldc_error: messagebox.showwarning("Calibration Warning", final_message)
-    elif not hall_sensor and not ldc_initialized: messagebox.showerror("Calibration Error", final_message)
+    elif not hall_sensor and not ldc_initialized: messagebox.showerror("Calibration Error", "Neither sensor available for calibration.")
     else: messagebox.showinfo("Calibration Complete", final_message)
 
 
-# (update_camera_feed remains the same)
+# <<< MODIFIED: Uses faster CAMERA_UPDATE_INTERVAL_MS >>>
 def update_camera_feed():
     global camera_label, window
-    if camera:
+    start_time = time.perf_counter() # Optional: for performance timing
+
+    img_tk = None # Initialize to None
+    if camera and camera.isOpened(): # Check if opened
         ret, frame = camera.read()
         if ret:
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            img = Image.fromarray(frame_rgb).resize((DISPLAY_IMG_WIDTH, DISPLAY_IMG_HEIGHT))
-            img_tk = ImageTk.PhotoImage(img)
-            camera_label.img_tk = img_tk; camera_label.configure(image=img_tk)
-        else: # Handle frame read error
+            try:
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # Use Pillow directly for resizing, potentially faster for simple cases
+                img = Image.fromarray(frame_rgb).resize((DISPLAY_IMG_WIDTH, DISPLAY_IMG_HEIGHT), Image.Resampling.NEAREST) # Use NEAREST for speed if quality allows
+                img_tk = ImageTk.PhotoImage(img)
+            except Exception as e:
+                 print(f"Error processing camera frame: {e}")
+                 # Keep img_tk as None
+        else:
              print("Warning: Failed to read frame from camera.")
-             # Optionally display a static error image or clear the label
-    else:
-        if not hasattr(camera_label, 'no_cam_img'):
-            placeholder = Image.new('RGB', (DISPLAY_IMG_WIDTH, DISPLAY_IMG_HEIGHT), color='#BDBDBD')
-            camera_label.no_cam_img = ImageTk.PhotoImage(placeholder)
-            # Ensure the label is configured only once or if image needs update
-            if camera_label.cget("image") != str(camera_label.no_cam_img):
-                 camera_label.configure(image=camera_label.no_cam_img, text="") # Clear text if any
-    if window: window.after(50, update_camera_feed) # Schedule next update
+             # Keep img_tk as None
 
+    if img_tk: # If we successfully got an image
+        camera_label.img_tk = img_tk # Anchor update to label
+        camera_label.configure(image=img_tk, text="")
+    else: # If camera failed or frame processing failed
+        if not hasattr(camera_label, 'no_cam_img'): # Create placeholder only once
+            try:
+                placeholder = Image.new('RGB', (DISPLAY_IMG_WIDTH, DISPLAY_IMG_HEIGHT), color='#BDBDBD')
+                camera_label.no_cam_img = ImageTk.PhotoImage(placeholder)
+            except Exception as e:
+                print(f"Error creating placeholder image: {e}")
+                camera_label.no_cam_img = None # Prevent repeated errors
 
-# (update_magnetism remains the same - uses EMA filter)
+        # Configure placeholder only if it exists and is different
+        if camera_label.no_cam_img and camera_label.cget("image") != str(camera_label.no_cam_img):
+             camera_label.configure(image=camera_label.no_cam_img, text="No Camera Feed")
+
+    # Optional: Print processing time
+    # end_time = time.perf_counter()
+    # print(f"Cam update took: {(end_time - start_time)*1000:.1f} ms")
+
+    if window: window.after(CAMERA_UPDATE_INTERVAL_MS, update_camera_feed) # Schedule next update
+
+# <<< MODIFIED: Uses faster GUI_UPDATE_INTERVAL_MS >>>
 def update_magnetism():
-    """Updates the magnetism reading label in the GUI using an EMA filter."""
-    global magnetism_label, window, previous_filtered_mag_mT # Need access to filter state
+    global magnetism_label, window, previous_filtered_mag_mT
 
-    avg_voltage = get_averaged_hall_voltage() # Gets average of NUM_SAMPLES_PER_UPDATE
+    avg_voltage = get_averaged_hall_voltage()
     display_text = "N/A"
-    raw_mag_mT = None # Store the unfiltered value
 
     if hall_sensor:
         if avg_voltage is not None:
             try:
-                # Calculate the raw (averaged) magnetism for this interval
                 raw_mag_mT = (avg_voltage - IDLE_VOLTAGE) / SENSITIVITY_V_PER_MILLITESLA
-
                 # --- EMA Filter ---
                 if previous_filtered_mag_mT is None:
-                    # Initialize filter state with the first valid reading
                     filtered_mag_mT = raw_mag_mT
                 else:
-                    # Apply EMA formula
                     filtered_mag_mT = (MAGNETISM_FILTER_ALPHA * raw_mag_mT) + \
                                       ((1 - MAGNETISM_FILTER_ALPHA) * previous_filtered_mag_mT)
-                # Update the state for the next iteration
                 previous_filtered_mag_mT = filtered_mag_mT
                 # --- End EMA Filter ---
-
-                # Format the *filtered* value for display
                 unit, value = ("mT", filtered_mag_mT) if abs(filtered_mag_mT) >= 1 else ("µT", filtered_mag_mT * 1000)
                 display_text = f"{value:.2f} {unit}"
-
+            except ZeroDivisionError:
+                 display_text = "Cal Error?" # Sensitivity likely zero
+                 previous_filtered_mag_mT = None
             except Exception as e:
-                # Handle calculation errors
-                print(f"Error calculating magnetism: {e}") # Log error
+                print(f"Error calculating magnetism: {e}")
                 display_text = "Error"
-                previous_filtered_mag_mT = None # Reset filter on error
+                previous_filtered_mag_mT = None
         else:
-            # Handle sensor read errors (avg_voltage is None)
-            display_text = "Error"
-            previous_filtered_mag_mT = None # Reset filter on error
+            display_text = "Read Err" # More specific than "Error"
+            previous_filtered_mag_mT = None
 
-    # Update the GUI label
     if magnetism_label: magnetism_label.config(text=display_text)
+    if window: window.after(GUI_UPDATE_INTERVAL_MS, update_magnetism)
 
-    # Schedule next update
-    if window:
-        window.after(GUI_UPDATE_INTERVAL_MS, update_magnetism)
-
-# (update_ldc_reading remains the same logic, but uses updated get_averaged_rp_data)
+# <<< MODIFIED: Uses faster GUI_UPDATE_INTERVAL_MS >>>
 def update_ldc_reading():
     global ldc_label, window, RP_DISPLAY_BUFFER
-    avg_rp_val = get_averaged_rp_data() # Gets average of NUM_SAMPLES_PER_UPDATE
+    avg_rp_val = get_averaged_rp_data()
     display_rp_text = "N/A"
 
     if ldc_initialized:
         if avg_rp_val is not None:
             RP_DISPLAY_BUFFER.append(avg_rp_val)
-            # Calculate average of the display buffer for smoother display
             if RP_DISPLAY_BUFFER:
-                display_rp_text = f"{int(sum(RP_DISPLAY_BUFFER) / len(RP_DISPLAY_BUFFER))}"
+                # Use buffer average for display smoothness
+                buffer_avg = sum(RP_DISPLAY_BUFFER) / len(RP_DISPLAY_BUFFER)
+                display_rp_text = f"{int(buffer_avg)}"
             else:
-                display_rp_text = "..." # Buffer empty
+                display_rp_text = "..."
         else:
-            # Handle sensor read errors (avg_rp_val is None)
-            RP_DISPLAY_BUFFER.clear() # Clear buffer on error
-            display_rp_text = "Error"
+            RP_DISPLAY_BUFFER.clear()
+            display_rp_text = "Read Err"
 
-    # Update the GUI label
     if ldc_label: ldc_label.config(text=display_rp_text)
-
-    # Schedule next update
-    if window:
-        window.after(GUI_UPDATE_INTERVAL_MS, update_ldc_reading)
-
+    if window: window.after(GUI_UPDATE_INTERVAL_MS, update_ldc_reading)
 
 # ======================
 # === GUI Setup ========
@@ -519,13 +564,13 @@ def setup_gui():
     global new_object_var, next_filename_label
     global label_font, readout_font, button_font, title_font, check_font, filename_display_font
 
-    window = tk.Tk(); window.title("Sensor Data Acquisition Tool v1.6.1_mod1"); window.geometry("1100x680") # Updated title
+    window = tk.Tk(); window.title("Sensor Data Acquisition Tool v1.6.1_mod2"); window.geometry("1100x680") # Updated title
     style = ttk.Style(); style.theme_use('clam' if 'clam' in style.theme_names() else 'default')
     title_font=tkFont.Font(family="Helvetica",size=14,weight="bold"); label_font=tkFont.Font(family="Helvetica",size=11); readout_font=tkFont.Font(family="Consolas",size=14,weight="bold"); button_font=tkFont.Font(family="Helvetica",size=10,weight="bold"); check_font=tkFont.Font(family="Helvetica",size=10); filename_display_font=tkFont.Font(family="Consolas",size=9)
     style.configure("TLabel",font=label_font,padding=2); style.configure("TButton",font=button_font,padding=(8,5)); style.configure("TMenubutton",font=label_font,padding=4); style.configure("TLabelframe",padding=8); style.configure("TLabelframe.Label",font=tkFont.Font(family="Helvetica",size=12,weight="bold")); style.configure("Readout.TLabel",font=readout_font,padding=(5,1)); style.configure("TCheckbutton",font=check_font,padding=2); style.configure("Filename.TLabel",font=filename_display_font,padding=(0,2))
 
     main_frame = ttk.Frame(window, padding="10 10 10 10"); main_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True); main_frame.columnconfigure(0, weight=3); main_frame.columnconfigure(1, weight=1); main_frame.rowconfigure(0, weight=1)
-    camera_label = ttk.Label(main_frame, text="Init Cam...", anchor="center", borderwidth=1, relief="sunken"); camera_label.grid(row=0, column=0, padx=(0, 10), pady=0, sticky="nsew")
+    camera_label = ttk.Label(main_frame, text="Initializing Camera...", anchor="center", borderwidth=1, relief="sunken"); camera_label.grid(row=0, column=0, padx=(0, 10), pady=0, sticky="nsew")
     controls_frame = ttk.Frame(main_frame); controls_frame.grid(row=0, column=1, padx=(0, 0), pady=0, sticky="nsew"); controls_frame.columnconfigure(0, weight=1); controls_row_idx = 0
 
     readings_frame = ttk.Labelframe(controls_frame, text=" Readings ", padding="10 5 10 5"); readings_frame.grid(row=controls_row_idx, column=0, sticky="new", pady=(0, 5)); controls_row_idx += 1; readings_frame.columnconfigure(0, weight=0); readings_frame.columnconfigure(1, weight=1)
@@ -554,37 +599,50 @@ def setup_gui():
 def run_application():
     global window
     if not initialize_global_state(): return
-    setup_gui()
-    if not camera: camera_label.configure(text="Camera Failed")
+    setup_gui() # Setup GUI elements first
+    # Set initial text before starting loops
+    if not camera: camera_label.configure(text="Camera Failed", image='')
     if not hall_sensor: magnetism_label.config(text="N/A")
     if not ldc_initialized: ldc_label.config(text="N/A")
+
     # Start the update loops
+    print("Starting update loops...")
     update_camera_feed(); update_magnetism(); update_ldc_reading()
     print("Starting Tkinter main loop...")
-    window.mainloop()
+    window.mainloop() # Blocks here until window is closed
 
 
 # --- Cleanup ---
 # (Function remains the same)
 def cleanup_resources():
     print("Cleaning up resources...")
-    if camera and camera.isOpened(): camera.release()
-    cv2.destroyAllWindows()
+    # Release camera first
+    if camera and camera.isOpened():
+        camera.release()
+        print("Camera released.")
+    cv2.destroyAllWindows() # Close OpenCV windows if any were opened directly
+
+    # Close SPI and put LDC to sleep
     if spi:
         try:
-            # Try putting LDC to sleep before closing SPI
             if ldc_initialized:
                  print("Putting LDC to sleep...")
                  ldc_write_register(START_CONFIG_REG, SLEEP_MODE)
-                 time.sleep(0.1)
+                 time.sleep(0.05) # Brief delay after sleep command
         except Exception as e: print(f"Note: Error putting LDC to sleep: {e}")
-        spi.close()
-        print("SPI closed.")
-    if SPI_ENABLED:
+        finally:
+             spi.close()
+             print("SPI closed.")
+
+    # Cleanup GPIO
+    if SPI_ENABLED: # Only cleanup GPIO if it was potentially used
         try:
-            GPIO.cleanup()
-            print("GPIO cleaned up.")
-        except Exception as e: print(f"Note: GPIO cleanup error: {e}")
+            # Check if GPIO setup was successful before cleaning
+            # (We don't have a flag for this, but SPI_ENABLED is a proxy)
+             GPIO.cleanup()
+             print("GPIO cleaned up.")
+        except Exception as e: print(f"Note: GPIO cleanup error (might be harmless if setup failed): {e}")
+
     print("Cleanup complete.")
 
 # --- Run ---
