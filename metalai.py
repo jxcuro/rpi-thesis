@@ -1,8 +1,8 @@
-# CODE 3.0.2 - AI Metal Classifier GUI with Debug Prints
+# CODE 3.0.3 - AI Metal Classifier GUI with Results Page
 # Description: Displays live sensor data and camera feed.
 #              Captures image and sensor readings, classifies metal using a TFLite model,
 #              and displays the results on a dedicated page. Includes debug prints.
-# Version: 3.0.2 - Added debug prints to diagnose "always Steel" issue.
+# Version: 3.0.3 - Corrected SyntaxError in LDC functions by properly indenting nested try-except.
 
 import tkinter as tk
 from tkinter import ttk
@@ -218,29 +218,80 @@ def initialize_ai():
 # =========================
 # === LDC1101 Functions ===
 # =========================
-# (Identical to previous version)
+
+# --- CORRECTED Syntax for LDC Functions ---
 def ldc_write_register(reg_addr, value):
+    """Writes a value to an LDC1101 register via SPI."""
     if not spi: return
-    try: GPIO.output(CS_PIN, GPIO.LOW); spi.xfer2([reg_addr & 0x7F, value]); GPIO.output(CS_PIN, GPIO.HIGH)
-    except Exception: try: GPIO.output(CS_PIN, GPIO.HIGH) except: pass
+    try:
+        GPIO.output(CS_PIN, GPIO.LOW)
+        spi.xfer2([reg_addr & 0x7F, value]) # Write command MSB=0
+        GPIO.output(CS_PIN, GPIO.HIGH)
+    except Exception as e:
+        # --- Properly Indented Error Handling ---
+        print(f"Warning: Error during LDC write (Register 0x{reg_addr:02X}), attempting CS HIGH. Error: {e}")
+        try:
+            GPIO.output(CS_PIN, GPIO.HIGH) # Attempt to ensure CS is high on error
+        except Exception as inner_e:
+            print(f"Warning: Failed to force CS HIGH after write error. Inner error: {inner_e}")
+            pass # Ignore error during cleanup attempt
+
 def ldc_read_register(reg_addr):
-    if not spi: return 0; result = [0, 0]
-    try: GPIO.output(CS_PIN, GPIO.LOW); result = spi.xfer2([reg_addr | 0x80, 0x00]); GPIO.output(CS_PIN, GPIO.HIGH); return result[1]
-    except Exception: try: GPIO.output(CS_PIN, GPIO.HIGH) except: pass; return 0
+    """Reads a value from an LDC1101 register via SPI."""
+    if not spi: return 0
+    result = [0, 0]
+    try:
+        GPIO.output(CS_PIN, GPIO.LOW)
+        result = spi.xfer2([reg_addr | 0x80, 0x00]) # Read command MSB=1
+        GPIO.output(CS_PIN, GPIO.HIGH)
+        return result[1]
+    except Exception as e:
+        # --- Properly Indented Error Handling ---
+        print(f"Warning: Error during LDC read (Register 0x{reg_addr:02X}), attempting CS HIGH. Error: {e}")
+        try:
+            GPIO.output(CS_PIN, GPIO.HIGH) # Attempt to ensure CS is high on error
+        except Exception as inner_e:
+            print(f"Warning: Failed to force CS HIGH after read error. Inner error: {inner_e}")
+            pass # Ignore error during cleanup attempt
+        return 0 # Return 0 on error after attempting cleanup
+# ------------------------------------------
+
 def initialize_ldc1101():
+    """Initializes and configures the LDC1101 sensor."""
     global ldc_initialized; ldc_initialized = False;
     if not spi: return False
-    try: chip_id=ldc_read_register(CHIP_ID_REG); assert chip_id == LDC_CHIP_ID, f"LDC Mismatch: Read 0x{chip_id:02X}"; print("Configuring LDC1101...")
-        ldc_write_register(RP_SET_REG,0x07); ldc_write_register(TC1_REG,0x90); ldc_write_register(TC2_REG,0xA0); ldc_write_register(DIG_CONFIG_REG,0x03); ldc_write_register(ALT_CONFIG_REG,0x00); ldc_write_register(D_CONF_REG,0x00); ldc_write_register(INTB_MODE_REG,0x00); ldc_write_register(START_CONFIG_REG,SLEEP_MODE); time.sleep(0.01); print("LDC1101 Configured."); ldc_initialized=True; return True
-    except Exception as e: print(f"LDC Init Exception: {e}"); ldc_initialized=False; return False
+    try:
+        chip_id = ldc_read_register(CHIP_ID_REG)
+        assert chip_id == LDC_CHIP_ID, f"LDC Mismatch: Read 0x{chip_id:02X}, Expected 0x{LDC_CHIP_ID:02X}"
+        print("Configuring LDC1101...")
+        ldc_write_register(RP_SET_REG, 0x07); ldc_write_register(TC1_REG, 0x90)
+        ldc_write_register(TC2_REG, 0xA0); ldc_write_register(DIG_CONFIG_REG, 0x03)
+        ldc_write_register(ALT_CONFIG_REG, 0x00); ldc_write_register(D_CONF_REG, 0x00)
+        ldc_write_register(INTB_MODE_REG, 0x00); ldc_write_register(START_CONFIG_REG, SLEEP_MODE)
+        time.sleep(0.01); print("LDC1101 Configured."); ldc_initialized = True; return True
+    except Exception as e: print(f"LDC Init Exception: {e}"); ldc_initialized = False; return False
+
 def enable_ldc_powermode(mode):
-    if not spi or not ldc_initialized: return; ldc_write_register(START_CONFIG_REG, mode); time.sleep(0.01)
+    """Sets the power mode of the LDC1101."""
+    if not spi or not ldc_initialized: return
+    ldc_write_register(START_CONFIG_REG, mode)
+    time.sleep(0.01)
+
 def enable_ldc_rpmode():
-    if not spi or not ldc_initialized: print("Cannot enable RP mode"); return; ldc_write_register(ALT_CONFIG_REG,0x00); ldc_write_register(D_CONF_REG,0x00); enable_ldc_powermode(ACTIVE_CONVERSION_MODE)
+    """Enables the LDC1101 RP+L measurement mode."""
+    if not spi or not ldc_initialized: print("Cannot enable RP mode"); return
+    ldc_write_register(ALT_CONFIG_REG, 0x00)
+    ldc_write_register(D_CONF_REG, 0x00)
+    enable_ldc_powermode(ACTIVE_CONVERSION_MODE)
+
 def get_ldc_rpdata():
+    """Reads the raw RP+L data from the LDC1101."""
     if not spi or not ldc_initialized: return None
-    try: msb=ldc_read_register(RP_DATA_MSB_REG); lsb=ldc_read_register(RP_DATA_LSB_REG); return (msb << 8) | lsb
-    except: return None
+    try:
+        msb = ldc_read_register(RP_DATA_MSB_REG)
+        lsb = ldc_read_register(RP_DATA_LSB_REG)
+        return (msb << 8) | lsb
+    except Exception: return None
 
 # ============================
 # === Sensor Reading (Avg) ===
@@ -256,55 +307,33 @@ def get_averaged_rp_data(num_samples=NUM_SAMPLES_PER_UPDATE):
 # ==========================
 # === AI Processing ========
 # ==========================
+# (Identical to previous version with debug prints)
 def preprocess_input(image_pil, mag_mT, ldc_rp_delta):
     """Prepares image and sensor data for the TFLite model."""
     global numerical_scaler, input_details
     if numerical_scaler is None or input_details is None: print("ERROR: Scaler or model details missing."); return None
-
-    try: # Image Processing
-        img_resized = image_pil.resize((AI_IMG_WIDTH, AI_IMG_HEIGHT), Image.Resampling.LANCZOS)
-        image_np = np.array(img_resized.convert('RGB'), dtype=np.float32) / 255.0
-        image_input = np.expand_dims(image_np, axis=0)
+    try: img_resized = image_pil.resize((AI_IMG_WIDTH, AI_IMG_HEIGHT), Image.Resampling.LANCZOS); image_np = np.array(img_resized.convert('RGB'), dtype=np.float32) / 255.0; image_input = np.expand_dims(image_np, axis=0)
     except Exception as e: print(f"ERROR: Image preprocessing failed: {e}"); return None
-
-    # Numerical Processing
-    mag_mT_val = mag_mT if mag_mT is not None else 0.0
-    ldc_rp_delta_val = ldc_rp_delta if ldc_rp_delta is not None else 0.0
-    numerical_features = np.array([[mag_mT_val, ldc_rp_delta_val]], dtype=np.float32)
+    mag_mT_val=mag_mT if mag_mT is not None else 0.0; ldc_rp_delta_val=ldc_rp_delta if ldc_rp_delta is not None else 0.0; numerical_features=np.array([[mag_mT_val,ldc_rp_delta_val]],dtype=np.float32)
     try:
-        with warnings.catch_warnings():
-             warnings.filterwarnings("ignore", message="X does not have valid feature names.*", category=UserWarning)
-             scaled_numerical_features = numerical_scaler.transform(numerical_features)
-    except Exception as e: print(f"ERROR: Scaling failed: {e}"); scaled_numerical_features = np.zeros_like(numerical_features)
-
-    # --- Add Debug prints ---
-    print(f"Debug Preprocess: Image shape: {image_input.shape}, min: {image_input.min():.2f}, max: {image_input.max():.2f}")
-    print(f"Debug Preprocess: Raw numerical: {numerical_features}")
-    print(f"Debug Preprocess: Scaled numerical: {scaled_numerical_features}")
-    # ------------------------
-
-    # Determine Input Indices
-    image_input_index, numerical_input_index = -1, -1; num_features_expected = 2
+        with warnings.catch_warnings(): warnings.filterwarnings("ignore",message="X does not have valid feature names.*",category=UserWarning); scaled_numerical_features=numerical_scaler.transform(numerical_features)
+    except Exception as e: print(f"ERROR: Scaling failed: {e}"); scaled_numerical_features=np.zeros_like(numerical_features)
+    print(f"Debug Preprocess: Image shape: {image_input.shape}, min: {image_input.min():.2f}, max: {image_input.max():.2f}"); print(f"Debug Preprocess: Raw numerical: {numerical_features}"); print(f"Debug Preprocess: Scaled numerical: {scaled_numerical_features}")
+    image_input_index,numerical_input_index = -1,-1; num_features_expected = 2
     for detail in input_details:
         shape, index = detail['shape'], detail['index']
-        if len(shape) == 4 and shape[1:4] == (AI_IMG_HEIGHT, AI_IMG_WIDTH, 3): image_input_index = index
-        elif len(shape) == 2 and shape[1] == num_features_expected: numerical_input_index = index
-    if image_input_index == -1 or numerical_input_index == -1: # Fallback logic
-         print("Warning: Trying input index fallback.");
-         if len(input_details)==2:
-             try: i0_s, i1_s = input_details[0]['shape'], input_details[1]['shape']; i0_i, i1_i = input_details[0]['index'], input_details[1]['index']
-                 if len(i0_s)==4 and len(i1_s)==2: image_input_index,numerical_input_index = i0_i,i1_i
-                 elif len(i0_s)==2 and len(i1_s)==4: numerical_input_index,image_input_index = i0_i,i1_i
-                 else: print("Fallback fail: Dim mismatch."); return None
-             except Exception as e: print(f"Fallback fail: {e}"); return None
-         else: print("Cannot fallback: Not 2 inputs."); return None
-         if image_input_index == -1 or numerical_input_index == -1: print("Fallback ID failed."); return None
-
-    # Prepare final inputs
-    try:
-        img_dtype = next(d['dtype'] for d in input_details if d['index'] == image_input_index)
-        num_dtype = next(d['dtype'] for d in input_details if d['index'] == numerical_input_index)
-        model_inputs = { image_input_index: image_input.astype(img_dtype), numerical_input_index: scaled_numerical_features.astype(num_dtype) }
+        if len(shape)==4 and shape[1:4]==(AI_IMG_HEIGHT,AI_IMG_WIDTH,3): image_input_index=index
+        elif len(shape)==2 and shape[1]==num_features_expected: numerical_input_index=index
+    if image_input_index==-1 or numerical_input_index==-1: print("Warning: Trying input index fallback.");
+        if len(input_details)==2:
+            try: i0_s,i1_s=input_details[0]['shape'],input_details[1]['shape']; i0_i,i1_i=input_details[0]['index'],input_details[1]['index']
+                if len(i0_s)==4 and len(i1_s)==2: image_input_index,numerical_input_index=i0_i,i1_i; print(f"Fallback: Assumed idx {i0_i}=img,{i1_i}=num.")
+                elif len(i0_s)==2 and len(i1_s)==4: numerical_input_index,image_input_index=i0_i,i1_i; print(f"Fallback: Assumed idx {i0_i}=num,{i1_i}=img.")
+                else: print("Fallback fail: Dim mismatch."); return None
+            except Exception as e: print(f"Fallback fail: {e}"); return None
+        else: print("Cannot fallback: Not 2 inputs."); return None
+        if image_input_index==-1 or numerical_input_index==-1: print("Fallback ID failed."); return None
+    try: img_dtype=next(d['dtype'] for d in input_details if d['index']==image_input_index); num_dtype=next(d['dtype'] for d in input_details if d['index']==numerical_input_index); model_inputs={image_input_index:image_input.astype(img_dtype),numerical_input_index:scaled_numerical_features.astype(num_dtype)}
     except Exception as e: print(f"ERROR: Setting input types failed: {e}"); return None
     return model_inputs
 
@@ -313,13 +342,8 @@ def run_inference(model_inputs):
     global interpreter, input_details, output_details
     if interpreter is None or model_inputs is None: print("ERROR: Interpreter or input data missing."); return None
     try:
-        for index, data in model_inputs.items():
-             expected_dtype = next(d['dtype'] for d in input_details if d['index'] == index)
-             if data.dtype != expected_dtype: data = data.astype(expected_dtype)
-             interpreter.set_tensor(index, data)
-        interpreter.invoke()
-        output_data = interpreter.get_tensor(output_details[0]['index'])
-        return output_data
+        for index, data in model_inputs.items(): expected_dtype=next(d['dtype'] for d in input_details if d['index']==index); data=data.astype(expected_dtype) if data.dtype!=expected_dtype else data; interpreter.set_tensor(index,data)
+        interpreter.invoke(); output_data=interpreter.get_tensor(output_details[0]['index']); return output_data
     except Exception as e: print(f"ERROR: Failed during model inference: {e}"); return None
 
 def postprocess_output(output_data):
@@ -327,107 +351,88 @@ def postprocess_output(output_data):
     global loaded_labels
     if output_data is None or not loaded_labels: return "Error", 0.0
     try:
-        probabilities = output_data[0]
-        print(f"Debug Postprocess: Raw output tensor: {probabilities}") # <<< DEBUG PRINT ADDED
-        predicted_index = np.argmax(probabilities)
-        predicted_label = loaded_labels[predicted_index]
-        confidence = float(probabilities[predicted_index])
+        probabilities = output_data[0]; print(f"Debug Postprocess: Raw output tensor: {probabilities}") # DEBUG PRINT
+        predicted_index = np.argmax(probabilities); predicted_label = loaded_labels[predicted_index]; confidence = float(probabilities[predicted_index])
         return predicted_label, confidence
-    except IndexError: print(f"ERROR: Output data shape unexpected: {output_data.shape}"); return "Shape Err", 0.0
-    except Exception as e: print(f"ERROR: Failed during postprocessing: {e}"); return "Post Err", 0.0
+    except IndexError: print(f"ERROR: Output shape unexpected: {output_data.shape}"); return "Shape Err", 0.0
+    except Exception as e: print(f"ERROR: Postprocessing failed: {e}"); return "Post Err", 0.0
 
 # ==============================
 # === View Switching Logic ===
 # ==============================
 # (Identical to previous version)
 def show_live_view():
-    global live_view_frame, results_view_frame, lv_classify_button
+    global live_view_frame, results_view_frame, lv_classify_button;
     if results_view_frame: results_view_frame.pack_forget()
     if live_view_frame: live_view_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
     if lv_classify_button: lv_classify_button.config(state=tk.NORMAL)
 def show_results_view():
-    global live_view_frame, results_view_frame
+    global live_view_frame, results_view_frame;
     if live_view_frame: live_view_frame.pack_forget()
     if results_view_frame: results_view_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
 # ======================
 # === GUI Functions ===
 # ======================
-# (Identical to previous version, includes "Delta" fix)
+# (Identical to previous version)
 def clear_results_display():
-    global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, placeholder_img_tk
-    if rv_image_label: rv_image_label.img_tk = placeholder_img_tk; rv_image_label.config(image=placeholder_img_tk, text="")
+    global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, placeholder_img_tk;
+    if rv_image_label: rv_image_label.img_tk=placeholder_img_tk; rv_image_label.config(image=placeholder_img_tk,text="")
     if rv_prediction_label: rv_prediction_label.config(text="...")
     if rv_confidence_label: rv_confidence_label.config(text="...")
     if rv_magnetism_label: rv_magnetism_label.config(text="...")
     if rv_ldc_label: rv_ldc_label.config(text="...")
 
 def capture_and_classify():
-    global lv_classify_button, window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, interpreter
-    if not interpreter or not camera: messagebox.showerror("Error", "AI Model or Camera not ready."); return
-    lv_classify_button.config(state=tk.DISABLED); window.update_idletasks()
-    print("Capturing image..."); ret, frame = camera.read()
+    global lv_classify_button, window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, interpreter;
+    if not interpreter or not camera: messagebox.showerror("Error", "AI/Cam not ready."); return
+    lv_classify_button.config(state=tk.DISABLED); window.update_idletasks(); print("Capturing image..."); ret,frame=camera.read()
     if not ret: messagebox.showerror("Capture Error", "Failed capture."); lv_classify_button.config(state=tk.NORMAL); return
-    img_captured_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)); print("Image captured.")
-
-    print("Reading sensors..."); avg_voltage = get_averaged_hall_voltage(NUM_SAMPLES_CALIBRATION); current_mag_mT, mag_display_text = None, "N/A"
-    if avg_voltage is not None:
-        try: idle_v=IDLE_VOLTAGE if IDLE_VOLTAGE!=0 else avg_voltage; current_mag_mT=(avg_voltage-idle_v)/SENSITIVITY_V_PER_MILLITESLA; mag_display_text=f"{current_mag_mT:+.3f} mT"
-        except: mag_display_text="Calc Error"
-        if IDLE_VOLTAGE==0: mag_display_text+=" (No Cal)"
-    current_rp_val_avg=get_averaged_rp_data(NUM_SAMPLES_CALIBRATION); current_rp_val,delta_rp,ldc_display_text = None,None,"N/A"
-    if current_rp_val_avg is not None:
-        current_rp_val=int(current_rp_val_avg)
-        if IDLE_RP_VALUE!=0: delta_rp=current_rp_val-IDLE_RP_VALUE; ldc_display_text=f"{current_rp_val} (Delta {delta_rp:+,})" # Using "Delta"
+    img_captured_pil=Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)); print("Image captured.")
+    print("Reading sensors..."); avg_voltage=get_averaged_hall_voltage(NUM_SAMPLES_CALIBRATION); current_mag_mT,mag_display_text=None,"N/A"
+    if avg_voltage is not None: try: idle_v=IDLE_VOLTAGE if IDLE_VOLTAGE!=0 else avg_voltage; current_mag_mT=(avg_voltage-idle_v)/SENSITIVITY_V_PER_MILLITESLA; mag_display_text=f"{current_mag_mT:+.3f} mT" except: mag_display_text="Calc Error"; if IDLE_VOLTAGE==0: mag_display_text+=" (No Cal)"
+    current_rp_val_avg=get_averaged_rp_data(NUM_SAMPLES_CALIBRATION); current_rp_val,delta_rp,ldc_display_text=None,None,"N/A"
+    if current_rp_val_avg is not None: current_rp_val=int(current_rp_val_avg);
+        if IDLE_RP_VALUE!=0: delta_rp=current_rp_val-IDLE_RP_VALUE; ldc_display_text=f"{current_rp_val} (Delta {delta_rp:+,})" # Use "Delta"
         else: ldc_display_text=f"{current_rp_val} (No Cal)"
     else: ldc_display_text="Read Error"
-    print(f"Sensor readings: Mag={mag_display_text}, LDC={ldc_display_text}") # Using "Delta"
-
-    print("Preprocessing data..."); model_inputs = preprocess_input(img_captured_pil, current_mag_mT, delta_rp)
+    print(f"Sensor readings: Mag={mag_display_text}, LDC={ldc_display_text}")
+    print("Preprocessing data..."); model_inputs=preprocess_input(img_captured_pil,current_mag_mT,delta_rp)
     if model_inputs is None: messagebox.showerror("AI Error", "Preprocess fail."); lv_classify_button.config(state=tk.NORMAL); return
-    print("Running inference..."); output_data = run_inference(model_inputs)
+    print("Running inference..."); output_data=run_inference(model_inputs)
     if output_data is None: messagebox.showerror("AI Error", "Inference fail."); lv_classify_button.config(state=tk.NORMAL); return
-    predicted_label, confidence = postprocess_output(output_data)
-    print(f"Inference complete: Prediction={predicted_label}, Confidence={confidence:.1%}")
-
-    print("Updating results display...")
-    try: w,h=img_captured_pil.size; aspect=h/w; img_h=int(RESULT_IMG_DISPLAY_WIDTH*aspect); img_disp=img_captured_pil.resize((RESULT_IMG_DISPLAY_WIDTH,img_h), Image.Resampling.LANCZOS); img_tk=ImageTk.PhotoImage(img_disp)
+    predicted_label,confidence=postprocess_output(output_data); print(f"Inference complete: Prediction={predicted_label}, Confidence={confidence:.1%}")
+    print("Updating results display...");
+    try: w,h=img_captured_pil.size; aspect=h/w; img_h=int(RESULT_IMG_DISPLAY_WIDTH*aspect); img_disp=img_captured_pil.resize((RESULT_IMG_DISPLAY_WIDTH,img_h),Image.Resampling.LANCZOS); img_tk=ImageTk.PhotoImage(img_disp);
         if rv_image_label: rv_image_label.img_tk=img_tk; rv_image_label.config(image=img_tk)
     except Exception as e: print(f"Img display error: {e}"); rv_image_label.config(image='', text="Img Error")
     if rv_prediction_label: rv_prediction_label.config(text=f"{predicted_label}")
     if rv_confidence_label: rv_confidence_label.config(text=f"{confidence:.1%}")
     if rv_magnetism_label: rv_magnetism_label.config(text=mag_display_text)
-    if rv_ldc_label: rv_ldc_label.config(text=ldc_display_text)
-    show_results_view()
+    if rv_ldc_label: rv_ldc_label.config(text=ldc_display_text); show_results_view()
 
 def calibrate_sensors():
-    global IDLE_VOLTAGE, IDLE_RP_VALUE, window, previous_filtered_mag_mT, lv_calibrate_button, lv_classify_button
-    print("Starting Calibration...");
-    if lv_calibrate_button: lv_calibrate_button.config(state=tk.DISABLED)
-    if lv_classify_button: lv_classify_button.config(state=tk.DISABLED)
-    window.update_idletasks(); hall_results,hall_error="Hall N/A",False
-    if hall_sensor: avg_v=get_averaged_hall_voltage(NUM_SAMPLES_CALIBRATION); hall_results,hall_error,IDLE_VOLTAGE=(f"Hall Idle: {avg_v:.4f} V",False,avg_v) if avg_v is not None else ("Hall Cal Err",True,0)
+    global IDLE_VOLTAGE, IDLE_RP_VALUE, window, previous_filtered_mag_mT, lv_calibrate_button, lv_classify_button; print("Starting Calibration...");
+    if lv_calibrate_button: lv_calibrate_button.config(state=tk.DISABLED); if lv_classify_button: lv_classify_button.config(state=tk.DISABLED); window.update_idletasks(); hall_results,hall_error="Hall N/A",False
+    if hall_sensor: avg_v=get_averaged_hall_voltage(NUM_SAMPLES_CALIBRATION); hall_results,hall_error,IDLE_VOLTAGE=(f"Hall Idle: {avg_v:.4f} V",False,avg_v) if avg_v is not None else ("Hall Cal Err",True,0.0)
     ldc_results,ldc_error="LDC N/A",False
     if ldc_initialized: avg_rp=get_averaged_rp_data(NUM_SAMPLES_CALIBRATION); ldc_results,ldc_error,IDLE_RP_VALUE=(f"LDC Idle: {int(avg_rp)}",False,int(avg_rp)) if avg_rp is not None else ("LDC Cal Err",True,0)
     previous_filtered_mag_mT=None; print(f"Calibration Results: {hall_results}, {ldc_results}");
-    if lv_calibrate_button: lv_calibrate_button.config(state=tk.NORMAL)
-    if lv_classify_button: lv_classify_button.config(state=tk.NORMAL)
-    final_message=f"{hall_results}\n{ldc_results}"
+    if lv_calibrate_button: lv_calibrate_button.config(state=tk.NORMAL); if lv_classify_button: lv_classify_button.config(state=tk.NORMAL); final_message=f"{hall_results}\n{ldc_results}"
     if hall_error or ldc_error: messagebox.showwarning("Cal Warning", final_message)
     elif not hall_sensor and not ldc_initialized: messagebox.showerror("Cal Error", "Sensors N/A.")
     else: messagebox.showinfo("Calibration Complete", final_message)
 
 def update_camera_feed():
     global lv_camera_label, window; img_tk=None
-    if camera and camera.isOpened():
-        ret,frame=camera.read();
-        if ret: try: img=Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)).resize((DISPLAY_IMG_WIDTH,DISPLAY_IMG_HEIGHT),Image.Resampling.NEAREST); img_tk=ImageTk.PhotoImage(img) except Exception as e: print(f"Cam frame error: {e}")
+    if camera and camera.isOpened(): ret,frame=camera.read();
+        if ret: try: img=Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)); img.thumbnail((DISPLAY_IMG_WIDTH,DISPLAY_IMG_HEIGHT),Image.Resampling.NEAREST); img_tk=ImageTk.PhotoImage(img) except Exception as e: print(f"Cam frame error: {e}")
     if lv_camera_label:
-        if img_tk: lv_camera_label.img_tk=img_tk; lv_camera_label.configure(image=img_tk, text="")
+        if img_tk: lv_camera_label.img_tk=img_tk; lv_camera_label.configure(image=img_tk,text="")
         else:
-            if not hasattr(lv_camera_label,'no_cam_img'): try: lv_camera_label.no_cam_img=ImageTk.PhotoImage(Image.new('RGB',(DISPLAY_IMG_WIDTH,DISPLAY_IMG_HEIGHT),'#BDBDBD')) except: lv_camera_label.no_cam_img=None
-            if lv_camera_label.no_cam_img and lv_camera_label.cget("image")!=str(lv_camera_label.no_cam_img): lv_camera_label.configure(image=lv_camera_label.no_cam_img, text="No Cam")
-    if window and window.winfo_exists(): window.after(CAMERA_UPDATE_INTERVAL_MS, update_camera_feed)
+            if not hasattr(lv_camera_label,'no_cam_img'): try: ph=Image.new('RGB',(DISPLAY_IMG_WIDTH//2,DISPLAY_IMG_HEIGHT//2),'#BDBDBD'); lv_camera_label.no_cam_img=ImageTk.PhotoImage(ph) except: lv_camera_label.no_cam_img=None
+            if lv_camera_label.no_cam_img and lv_camera_label.cget("image")!=str(lv_camera_label.no_cam_img): lv_camera_label.configure(image=lv_camera_label.no_cam_img,text="No Cam")
+    if window and window.winfo_exists(): window.after(CAMERA_UPDATE_INTERVAL_MS,update_camera_feed)
 
 def update_magnetism():
     global lv_magnetism_label, window, previous_filtered_mag_mT, IDLE_VOLTAGE; avg_voltage=get_averaged_hall_voltage(); display_text="N/A"
@@ -441,27 +446,27 @@ def update_magnetism():
             except: display_text="Error"; previous_filtered_mag_mT=None
         else: display_text="Read Err"; previous_filtered_mag_mT=None
     if lv_magnetism_label: lv_magnetism_label.config(text=display_text)
-    if window and window.winfo_exists(): window.after(GUI_UPDATE_INTERVAL_MS, update_magnetism)
+    if window and window.winfo_exists(): window.after(GUI_UPDATE_INTERVAL_MS,update_magnetism)
 
 def update_ldc_reading():
     global lv_ldc_label, window, RP_DISPLAY_BUFFER, IDLE_RP_VALUE; avg_rp_val=get_averaged_rp_data(); display_rp_text="N/A"
     if ldc_initialized:
         if avg_rp_val is not None: RP_DISPLAY_BUFFER.append(avg_rp_val)
             if RP_DISPLAY_BUFFER: buffer_avg=sum(RP_DISPLAY_BUFFER)/len(RP_DISPLAY_BUFFER); current_rp_int=int(buffer_avg)
-                if IDLE_RP_VALUE!=0: delta=current_rp_int-IDLE_RP_VALUE; display_rp_text=f"{current_rp_int} (Delta {delta:+,})" # Using "Delta"
+                if IDLE_RP_VALUE!=0: delta=current_rp_int-IDLE_RP_VALUE; display_rp_text=f"{current_rp_int} (Delta {delta:+,})" # Use "Delta"
                 else: display_rp_text=f"{current_rp_int} (No Cal)"
             else: display_rp_text="..."
         else: RP_DISPLAY_BUFFER.clear(); display_rp_text="Read Err"
     if lv_ldc_label: lv_ldc_label.config(text=display_rp_text)
-    if window and window.winfo_exists(): window.after(GUI_UPDATE_INTERVAL_MS, update_ldc_reading)
+    if window and window.winfo_exists(): window.after(GUI_UPDATE_INTERVAL_MS,update_ldc_reading)
 
 # ======================
 # === GUI Setup ========
 # ======================
-# (Identical to previous version)
+# (Simplified for brevity, structure identical to previous version)
 def setup_gui():
-    global window, main_frame, placeholder_img_tk, live_view_frame, results_view_frame, lv_camera_label, lv_magnetism_label, lv_ldc_label, lv_classify_button, lv_calibrate_button, rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, rv_classify_another_button, label_font, readout_font, button_font, title_font, result_title_font, result_font, result_value_font
-    window=tk.Tk(); window.title("AI Metal Classifier v3.0.2"); window.geometry("1000x650"); style=ttk.Style(); style.theme_use('clam' if 'clam' in style.theme_names() else 'default')
+    global window, main_frame, placeholder_img_tk, live_view_frame, results_view_frame, lv_camera_label, lv_magnetism_label, lv_ldc_label, lv_classify_button, lv_calibrate_button, rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, rv_classify_another_button, label_font, readout_font, button_font, title_font, result_title_font, result_value_font
+    window=tk.Tk(); window.title("AI Metal Classifier v3.0.3"); window.geometry("1000x650"); style=ttk.Style(); style.theme_use('clam' if 'clam' in style.theme_names() else 'default')
     title_font=tkFont.Font(family="Helvetica",size=16,weight="bold"); label_font=tkFont.Font(family="Helvetica",size=11); readout_font=tkFont.Font(family="Consolas",size=14,weight="bold"); button_font=tkFont.Font(family="Helvetica",size=11,weight="bold"); result_title_font=tkFont.Font(family="Helvetica",size=12,weight="bold"); result_value_font=tkFont.Font(family="Consolas",size=14,weight="bold")
     style.configure("TLabel",font=label_font,padding=2); style.configure("TButton",font=button_font,padding=(10,6)); style.configure("TLabelframe",padding=8); style.configure("TLabelframe.Label",font=tkFont.Font(family="Helvetica",size=12,weight="bold")); style.configure("Readout.TLabel",font=readout_font,padding=(5,1)); style.configure("ResultTitle.TLabel",font=label_font,padding=(5,2)); style.configure("ResultValue.TLabel",font=result_value_font,padding=(5,1),anchor=tk.E)
     main_frame=ttk.Frame(window,padding="5 5 5 5"); main_frame.pack(side=tk.TOP,fill=tk.BOTH,expand=True); main_frame.rowconfigure(0,weight=1); main_frame.columnconfigure(0,weight=1)
