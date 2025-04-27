@@ -1720,26 +1720,3 @@ if __name__ == '__main__':
              print("Skipping resource cleanup as hardware initialization was not attempted.")
 
         print("\nApplication finished.")
-```
-
-**Key Changes Made:**
-
-1.  **Indentation:** Corrected indentation across the entire script, especially within `try...except...finally`, `if...elif...else`, `for`, and `with` blocks.
-2.  **Line Breaks:** Separated multiple statements previously crammed onto single lines (e.g., in `initialize_hardware`'s SPI setup, `calibrate_sensors`, `update_camera_feed`, `update_magnetism`, `update_ldc_reading`, `preprocess_input`).
-3.  **Readability:** Improved overall code structure and readability.
-4.  **Error Handling:**
-    * Refined `try...except` blocks to catch more specific errors where appropriate (e.g., `FileNotFoundError`, `TypeError`, `ValueError`, `ZeroDivisionError`).
-    * Ensured `finally` blocks in SPI/GPIO functions attempt to reset hardware states (like CS pin) even if errors occur.
-    * Added checks for `None` values returned by sensor reading functions.
-    * Improved error messages and added more debug prints (commented out or conditional).
-    * Added fallback logic checks in `preprocess_input` to ensure it handles failures correctly.
-    * Made `cleanup_resources` more robust, attempting to close/cleanup resources even if errors occurred during setup or operation.
-5.  **Clarity:** Added more comments to explain specific sections, configurations, and logic flow.
-6.  **GUI:**
-    * Improved the centering of elements in the Results View.
-    * Used `thumbnail` for camera feed resizing to maintain aspect ratio easily.
-    * Added helper function `create_placeholder_image` for cleaner code.
-    * Ensured GUI labels are updated correctly even when sensor reads or calculations fail (showing "N/A", "Read Err", "Calc Error", etc.).
-    * Made sure buttons are re-enabled correctly after operations or errors.
-
-This revised code should be much more robust and easier to understand and maintain. Please try running this versi
