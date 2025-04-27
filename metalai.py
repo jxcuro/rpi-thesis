@@ -1,8 +1,8 @@
-# CODE 3.0.5 - AI Metal Classifier GUI with Results Page
+# CODE 3.0.6 - AI Metal Classifier GUI with Results Page
 # Description: Displays live sensor data and camera feed.
 #              Captures image and sensor readings, classifies metal using a TFLite model,
 #              and displays the results on a dedicated page. Includes debug prints.
-# Version: 3.0.5 - Ensuring correct indentation throughout, specifically fixing previous syntax errors.
+# Version: 3.0.6 - Revalidated indentation, especially in preprocess_input fallback logic.
 
 import tkinter as tk
 from tkinter import ttk
@@ -216,6 +216,7 @@ def initialize_ai():
             warnings.filterwarnings("ignore", message="The value of the smallest subnormal.*", category=UserWarning)
             interpreter = Interpreter(model_path=MODEL_PATH)
             interpreter.allocate_tensors()
+
         input_details = interpreter.get_input_details(); output_details = interpreter.get_output_details()
         print(f"Loaded TFLite model from {MODEL_PATH}")
         # Check output shape vs labels
@@ -339,48 +340,130 @@ def get_averaged_rp_data(num_samples=NUM_SAMPLES_PER_UPDATE):
 def preprocess_input(image_pil, mag_mT, ldc_rp_delta):
     """Prepares image and sensor data for the TFLite model."""
     global numerical_scaler, input_details
-    if numerical_scaler is None or input_details is None: print("ERROR: Scaler or model details missing."); return None
-    try: img_resized=image_pil.resize((AI_IMG_WIDTH,AI_IMG_HEIGHT),Image.Resampling.LANCZOS); image_np=np.array(img_resized.convert('RGB'),dtype=np.float32)/255.0; image_input=np.expand_dims(image_np,axis=0)
-    except Exception as e: print(f"ERROR: Image preprocessing failed: {e}"); return None
-    mag_mT_val=mag_mT if mag_mT is not None else 0.0; ldc_rp_delta_val=ldc_rp_delta if ldc_rp_delta is not None else 0.0; numerical_features=np.array([[mag_mT_val,ldc_rp_delta_val]],dtype=np.float32)
+    if numerical_scaler is None or input_details is None:
+        print("ERROR: Scaler or model details missing.")
+        return None
+
+    # Image Processing
     try:
-        with warnings.catch_warnings(): warnings.filterwarnings("ignore",message="X does not have valid feature names.*",category=UserWarning); scaled_numerical_features=numerical_scaler.transform(numerical_features)
-    except Exception as e: print(f"ERROR: Scaling failed: {e}"); scaled_numerical_features=np.zeros_like(numerical_features)
-    print(f"Debug Preprocess: Image shape: {image_input.shape}, min: {image_input.min():.2f}, max: {image_input.max():.2f}"); print(f"Debug Preprocess: Raw numerical: {numerical_features}"); print(f"Debug Preprocess: Scaled numerical: {scaled_numerical_features}")
-    image_input_index,numerical_input_index = -1,-1; num_features_expected = 2
+        img_resized = image_pil.resize((AI_IMG_WIDTH, AI_IMG_HEIGHT), Image.Resampling.LANCZOS)
+        image_np = np.array(img_resized.convert('RGB'), dtype=np.float32) / 255.0
+        image_input = np.expand_dims(image_np, axis=0)
+    except Exception as e:
+        print(f"ERROR: Image preprocessing failed: {e}")
+        return None
+
+    # Numerical Processing
+    mag_mT_val = mag_mT if mag_mT is not None else 0.0
+    ldc_rp_delta_val = ldc_rp_delta if ldc_rp_delta is not None else 0.0
+    numerical_features = np.array([[mag_mT_val, ldc_rp_delta_val]], dtype=np.float32)
+    try:
+        # Suppress sklearn warning about feature names if it persists and is known to be benign
+        with warnings.catch_warnings():
+             warnings.filterwarnings("ignore", message="X does not have valid feature names.*", category=UserWarning)
+             scaled_numerical_features = numerical_scaler.transform(numerical_features)
+    except Exception as e:
+        print(f"ERROR: Scaling failed: {e}")
+        scaled_numerical_features = np.zeros_like(numerical_features) # Default on error
+
+    # --- Add Debug prints ---
+    print(f"Debug Preprocess: Image shape: {image_input.shape}, min: {image_input.min():.2f}, max: {image_input.max():.2f}")
+    print(f"Debug Preprocess: Raw numerical: {numerical_features}")
+    print(f"Debug Preprocess: Scaled numerical: {scaled_numerical_features}")
+    # ------------------------
+
+    # Determine Input Indices Dynamically
+    image_input_index, numerical_input_index = -1, -1
+    num_features_expected = 2 # Should match the shape of numerical_features scaled
     for detail in input_details:
-        shape,index=detail['shape'],detail['index']
-        if len(shape)==4 and shape[1:4]==(AI_IMG_HEIGHT,AI_IMG_WIDTH,3): image_input_index=index
-        elif len(shape)==2 and shape[1]==num_features_expected: numerical_input_index=index
-    if image_input_index==-1 or numerical_input_index==-1: print("Warning: Trying input index fallback.");
-        if len(input_details)==2:
-            try: i0_s,i1_s=input_details[0]['shape'],input_details[1]['shape']; i0_i,i1_i=input_details[0]['index'],input_details[1]['index']
-                if len(i0_s)==4 and len(i1_s)==2: image_input_index,numerical_input_index=i0_i,i1_i; print(f"Fallback: Assumed idx {i0_i}=img,{i1_i}=num.")
-                elif len(i0_s)==2 and len(i1_s)==4: numerical_input_index,image_input_index=i0_i,i1_i; print(f"Fallback: Assumed idx {i0_i}=num,{i1_i}=img.")
-                else: print("Fallback fail: Dim mismatch."); return None
-            except Exception as e: print(f"Fallback fail: {e}"); return None
-        else: print("Cannot fallback: Not 2 inputs."); return None
-        if image_input_index==-1 or numerical_input_index==-1: print("Fallback ID failed."); return None
-    try: img_dtype=next(d['dtype'] for d in input_details if d['index']==image_input_index); num_dtype=next(d['dtype'] for d in input_details if d['index']==numerical_input_index); model_inputs={image_input_index:image_input.astype(img_dtype),numerical_input_index:scaled_numerical_features.astype(num_dtype)}
-    except Exception as e: print(f"ERROR: Setting input types failed: {e}"); return None
+        shape, index = detail['shape'], detail['index']
+        # Check for image input shape (Batch, H, W, Channels)
+        if len(shape) == 4 and shape[1:4] == (AI_IMG_HEIGHT, AI_IMG_WIDTH, 3):
+            image_input_index = index
+        # Check for numerical input shape (Batch, NumFeatures)
+        elif len(shape) == 2 and shape[1] == num_features_expected:
+            numerical_input_index = index
+
+    # --- Fallback logic block STARTS here ---
+    # Check if primary identification failed
+    if image_input_index == -1 or numerical_input_index == -1:
+        # This block is indented relative to the above 'if'
+        print("Warning: Could not reliably determine input tensor indices from shape. Trying fallback.")
+
+        # This 'if' is indented relative to the outer 'if'
+        if len(input_details) == 2:
+            # This block is indented relative to 'if len(input_details) == 2:'
+            print("Attempting fallback identification based only on number of dimensions...")
+            try:
+                # This block is indented relative to 'try:'
+                i0_shape, i1_shape = input_details[0]['shape'], input_details[1]['shape']
+                i0_idx, i1_idx = input_details[0]['index'], input_details[1]['index']
+                if len(i0_shape) == 4 and len(i1_shape) == 2:
+                    image_input_index, numerical_input_index = i0_idx, i1_idx
+                    print(f"Fallback: Assumed idx {i0_idx}=image, {i1_idx}=num.")
+                elif len(i0_shape) == 2 and len(i1_shape) == 4:
+                    numerical_input_index, image_input_index = i0_idx, i1_idx
+                    print(f"Fallback: Assumed idx {i0_idx}=num, {i1_idx}=image.")
+                else:
+                    print("Fallback fail: Dim mismatch (not 4D and 2D).")
+                    return None # Exit if fallback assumptions don't match
+            except Exception as e:
+                 # This block is indented relative to 'except:'
+                 print(f"Fallback fail: {e}")
+                 return None
+        else:
+            # This block is indented relative to 'else:'
+            print("Cannot fallback: Model does not have exactly 2 inputs.")
+            return None
+        # --- Fallback logic block ENDS here ---
+
+        # Check again if fallback *still* failed or didn't run
+        # This 'if' is indented relative to the *outer* 'if' on line 363 (approx)
+        if image_input_index == -1 or numerical_input_index == -1:
+            print("ERROR: Fallback failed to identify input indices.")
+            return None
+
+    # Prepare the final input dictionary
+    try:
+        img_dtype = next(d['dtype'] for d in input_details if d['index'] == image_input_index)
+        num_dtype = next(d['dtype'] for d in input_details if d['index'] == numerical_input_index)
+        model_inputs = {
+            image_input_index: image_input.astype(img_dtype),
+            numerical_input_index: scaled_numerical_features.astype(num_dtype)
+        }
+    except Exception as e:
+        print(f"ERROR: Setting input types failed: {e}")
+        return None
+
     return model_inputs
+
 
 def run_inference(model_inputs):
     """Runs inference using the loaded TFLite model."""
     global interpreter, input_details, output_details
     if interpreter is None or model_inputs is None: print("ERROR: Interpreter or input data missing."); return None
     try:
-        for index, data in model_inputs.items(): expected_dtype=next(d['dtype'] for d in input_details if d['index']==index); data=data.astype(expected_dtype) if data.dtype!=expected_dtype else data; interpreter.set_tensor(index,data)
-        interpreter.invoke(); output_data=interpreter.get_tensor(output_details[0]['index']); return output_data
-    except Exception as e: print(f"ERROR: Failed during model inference: {e}"); return None
+        for index, data in model_inputs.items():
+            expected_dtype=next(d['dtype'] for d in input_details if d['index']==index)
+            data=data.astype(expected_dtype) if data.dtype!=expected_dtype else data
+            interpreter.set_tensor(index,data)
+        interpreter.invoke()
+        output_data = interpreter.get_tensor(output_details[0]['index'])
+        return output_data
+    except Exception as e:
+        print(f"ERROR: Failed during model inference: {e}")
+        return None
 
 def postprocess_output(output_data):
     """Interprets the model's output to get prediction and confidence."""
     global loaded_labels
     if output_data is None or not loaded_labels: return "Error", 0.0
     try:
-        probabilities = output_data[0]; print(f"Debug Postprocess: Raw output tensor: {probabilities}") # DEBUG PRINT
-        predicted_index = np.argmax(probabilities); predicted_label = loaded_labels[predicted_index]; confidence = float(probabilities[predicted_index])
+        probabilities = output_data[0]
+        print(f"Debug Postprocess: Raw output tensor: {probabilities}") # DEBUG PRINT
+        predicted_index = np.argmax(probabilities)
+        predicted_label = loaded_labels[predicted_index]
+        confidence = float(probabilities[predicted_index])
         return predicted_label, confidence
     except IndexError: print(f"ERROR: Output shape unexpected: {output_data.shape}"); return "Shape Err", 0.0
     except Exception as e: print(f"ERROR: Postprocessing failed: {e}"); return "Post Err", 0.0
@@ -390,14 +473,14 @@ def postprocess_output(output_data):
 # ==============================
 def show_live_view():
     """Hides results view and shows the live camera/sensor view."""
-    global live_view_frame, results_view_frame, lv_classify_button;
+    global live_view_frame, results_view_frame, lv_classify_button
     if results_view_frame: results_view_frame.pack_forget()
     if live_view_frame: live_view_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
     if lv_classify_button: lv_classify_button.config(state=tk.NORMAL)
 
 def show_results_view():
     """Hides live view and shows the classification results view."""
-    global live_view_frame, results_view_frame;
+    global live_view_frame, results_view_frame
     if live_view_frame: live_view_frame.pack_forget()
     if results_view_frame: results_view_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
@@ -406,8 +489,10 @@ def show_results_view():
 # ======================
 def clear_results_display():
     """Clears the classification results display widgets to placeholders."""
-    global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, placeholder_img_tk;
-    if rv_image_label: rv_image_label.img_tk=placeholder_img_tk; rv_image_label.config(image=placeholder_img_tk,text="")
+    global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, placeholder_img_tk
+    if rv_image_label:
+        if placeholder_img_tk: rv_image_label.img_tk=placeholder_img_tk; rv_image_label.config(image=placeholder_img_tk,text="")
+        else: rv_image_label.config(image='', text="No Image") # Fallback if placeholder failed
     if rv_prediction_label: rv_prediction_label.config(text="...")
     if rv_confidence_label: rv_confidence_label.config(text="...")
     if rv_magnetism_label: rv_magnetism_label.config(text="...")
@@ -415,9 +500,10 @@ def clear_results_display():
 
 def capture_and_classify():
     """Captures image and sensor data, runs AI classification, displays results on results page."""
-    global lv_classify_button, window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, interpreter;
+    global lv_classify_button, window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, interpreter
     if not interpreter or not camera: messagebox.showerror("Error", "AI/Cam not ready."); return
-    lv_classify_button.config(state=tk.DISABLED); window.update_idletasks(); print("Capturing image..."); ret,frame=camera.read()
+    lv_classify_button.config(state=tk.DISABLED); window.update_idletasks()
+    print("Capturing image..."); ret,frame=camera.read()
     if not ret: messagebox.showerror("Capture Error", "Failed capture."); lv_classify_button.config(state=tk.NORMAL); return
     img_captured_pil=Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)); print("Image captured.")
     print("Reading sensors..."); avg_voltage=get_averaged_hall_voltage(NUM_SAMPLES_CALIBRATION); current_mag_mT,mag_display_text=None,"N/A"
@@ -506,71 +592,43 @@ def setup_gui():
     global label_font, readout_font, button_font, title_font, result_title_font, result_value_font
 
     # --- Window and Style ---
-    window = tk.Tk()
-    window.title("AI Metal Classifier v3.0.5") # Updated version
-    window.geometry("1000x650")
-    style = ttk.Style()
-    style.theme_use('clam' if 'clam' in style.theme_names() else 'default')
-
+    window = tk.Tk(); window.title("AI Metal Classifier v3.0.6"); window.geometry("1000x650")
+    style = ttk.Style(); style.theme_use('clam' if 'clam' in style.theme_names() else 'default')
     # --- Fonts ---
-    title_font=tkFont.Font(family="Helvetica", size=16, weight="bold")
-    label_font=tkFont.Font(family="Helvetica", size=11)
-    readout_font=tkFont.Font(family="Consolas", size=14, weight="bold")
-    button_font=tkFont.Font(family="Helvetica", size=11, weight="bold")
-    result_title_font=tkFont.Font(family="Helvetica", size=12, weight="bold")
-    result_value_font=tkFont.Font(family="Consolas", size=14, weight="bold")
-
+    title_font=tkFont.Font(family="Helvetica",size=16,weight="bold"); label_font=tkFont.Font(family="Helvetica",size=11); readout_font=tkFont.Font(family="Consolas",size=14,weight="bold"); button_font=tkFont.Font(family="Helvetica",size=11,weight="bold"); result_title_font=tkFont.Font(family="Helvetica",size=12,weight="bold"); result_value_font=tkFont.Font(family="Consolas",size=14,weight="bold")
     # --- Style Configurations ---
-    style.configure("TLabel", font=label_font, padding=2)
-    style.configure("TButton", font=button_font, padding=(10, 6))
-    style.configure("TLabelframe", padding=8)
-    style.configure("TLabelframe.Label", font=tkFont.Font(family="Helvetica", size=12, weight="bold"))
-    style.configure("Readout.TLabel", font=readout_font, padding=(5, 1))
-    style.configure("ResultTitle.TLabel", font=label_font, padding=(5, 2))
-    style.configure("ResultValue.TLabel", font=result_value_font, padding=(5, 1), anchor=tk.E)
-
+    style.configure("TLabel",font=label_font,padding=2); style.configure("TButton",font=button_font,padding=(10,6)); style.configure("TLabelframe",padding=8); style.configure("TLabelframe.Label",font=tkFont.Font(family="Helvetica",size=12,weight="bold")); style.configure("Readout.TLabel",font=readout_font,padding=(5,1)); style.configure("ResultTitle.TLabel",font=label_font,padding=(5,2)); style.configure("ResultValue.TLabel",font=result_value_font,padding=(5,1),anchor=tk.E)
     # --- Main Content Frame ---
-    main_frame = ttk.Frame(window, padding="5 5 5 5")
-    main_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-    main_frame.rowconfigure(0, weight=1); main_frame.columnconfigure(0, weight=1)
+    main_frame = ttk.Frame(window, padding="5 5 5 5"); main_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True); main_frame.rowconfigure(0, weight=1); main_frame.columnconfigure(0, weight=1)
 
     # --- Live View Frame Construction ---
-    live_view_frame = ttk.Frame(main_frame, padding="5 5 5 5")
-    live_view_frame.columnconfigure(0, weight=3); live_view_frame.columnconfigure(1, weight=1); live_view_frame.rowconfigure(0, weight=1)
-    lv_camera_label = ttk.Label(live_view_frame, text="Init Cam...", anchor="center", borderwidth=1, relief="sunken")
-    lv_camera_label.grid(row=0, column=0, padx=(0, 10), pady=0, sticky="nsew")
+    live_view_frame = ttk.Frame(main_frame, padding="5 5 5 5"); live_view_frame.columnconfigure(0, weight=3); live_view_frame.columnconfigure(1, weight=1); live_view_frame.rowconfigure(0, weight=1)
+    lv_camera_label = ttk.Label(live_view_frame, text="Init Cam...", anchor="center", borderwidth=1, relief="sunken"); lv_camera_label.grid(row=0, column=0, padx=(0, 10), pady=0, sticky="nsew")
     lv_controls_frame = ttk.Frame(live_view_frame); lv_controls_frame.grid(row=0, column=1, sticky="nsew"); lv_controls_frame.columnconfigure(0, weight=1)
-    lv_readings_frame = ttk.Labelframe(lv_controls_frame, text=" Live Readings ", padding="10 5 10 5")
-    lv_readings_frame.grid(row=0, column=0, sticky="new", pady=(0, 10)); lv_readings_frame.columnconfigure(1, weight=1)
-    ttk.Label(lv_readings_frame, text="Magnetism:").grid(row=0, column=0, sticky="w", padx=(0, 10))
-    lv_magnetism_label = ttk.Label(lv_readings_frame, text="Init...", style="Readout.TLabel", anchor="e"); lv_magnetism_label.grid(row=0, column=1, sticky="ew")
-    ttk.Label(lv_readings_frame, text="LDC (Delta):").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=(3, 0))
-    lv_ldc_label = ttk.Label(lv_readings_frame, text="Init...", style="Readout.TLabel", anchor="e"); lv_ldc_label.grid(row=1, column=1, sticky="ew", pady=(3, 0))
-    lv_actions_frame = ttk.Labelframe(lv_controls_frame, text=" Actions ", padding="10 5 10 10")
-    lv_actions_frame.grid(row=1, column=0, sticky="new", pady=(0, 10)); lv_actions_frame.columnconfigure(0, weight=1)
+    lv_readings_frame = ttk.Labelframe(lv_controls_frame, text=" Live Readings ", padding="10 5 10 5"); lv_readings_frame.grid(row=0, column=0, sticky="new", pady=(0, 10)); lv_readings_frame.columnconfigure(1, weight=1)
+    ttk.Label(lv_readings_frame, text="Magnetism:").grid(row=0, column=0, sticky="w", padx=(0, 10)); lv_magnetism_label = ttk.Label(lv_readings_frame, text="Init...", style="Readout.TLabel", anchor="e"); lv_magnetism_label.grid(row=0, column=1, sticky="ew")
+    ttk.Label(lv_readings_frame, text="LDC (Delta):").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=(3, 0)); lv_ldc_label = ttk.Label(lv_readings_frame, text="Init...", style="Readout.TLabel", anchor="e"); lv_ldc_label.grid(row=1, column=1, sticky="ew", pady=(3, 0))
+    lv_actions_frame = ttk.Labelframe(lv_controls_frame, text=" Actions ", padding="10 5 10 10"); lv_actions_frame.grid(row=1, column=0, sticky="new", pady=(0, 10)); lv_actions_frame.columnconfigure(0, weight=1)
     lv_classify_button = ttk.Button(lv_actions_frame, text="Capture & Classify", command=capture_and_classify); lv_classify_button.grid(row=0, column=0, sticky="ew", pady=(5, 5))
     lv_calibrate_button = ttk.Button(lv_actions_frame, text="Calibrate Sensors", command=calibrate_sensors); lv_calibrate_button.grid(row=1, column=0, sticky="ew", pady=(5, 5))
 
     # --- Results View Frame Construction ---
-    results_view_frame = ttk.Frame(main_frame, padding="10 10 10 10")
-    results_view_frame.columnconfigure(0, weight=1) # Center content
+    results_view_frame = ttk.Frame(main_frame, padding="10 10 10 10"); results_view_frame.columnconfigure(0, weight=1)
     rv_content_frame = ttk.Frame(results_view_frame); rv_content_frame.grid(row=0, column=0, sticky="n")
     ttk.Label(rv_content_frame, text="Classification Result", font=title_font).grid(row=0, column=0, columnspan=2, pady=(5, 15))
     try: placeholder_img_tk = ImageTk.PhotoImage(Image.new('RGB', (RESULT_IMG_DISPLAY_WIDTH, int(RESULT_IMG_DISPLAY_WIDTH * 0.75)), '#E0E0E0'))
     except Exception as e: placeholder_img_tk = None; print(f"Placeholder creation failed: {e}")
     rv_image_label = ttk.Label(rv_content_frame, anchor="center", borderwidth=1, relief="sunken", image=placeholder_img_tk); rv_image_label.grid(row=1, column=0, columnspan=2, pady=(0, 15))
-    rv_details_frame = ttk.Frame(rv_content_frame); rv_details_frame.grid(row=2, column=0, columnspan=2, pady=(0, 15)); rv_details_frame.columnconfigure(1, weight=1)
-    res_row=0
+    rv_details_frame = ttk.Frame(rv_content_frame); rv_details_frame.grid(row=2, column=0, columnspan=2, pady=(0, 15)); rv_details_frame.columnconfigure(1, weight=1); res_row=0
     ttk.Label(rv_details_frame, text="Material:", style="ResultTitle.TLabel").grid(row=res_row, column=0, sticky="w", padx=5); rv_prediction_label = ttk.Label(rv_details_frame, text="...", style="ResultValue.TLabel"); rv_prediction_label.grid(row=res_row, column=1, sticky="ew", padx=5); res_row+=1
     ttk.Label(rv_details_frame, text="Confidence:", style="ResultTitle.TLabel").grid(row=res_row, column=0, sticky="w", padx=5); rv_confidence_label = ttk.Label(rv_details_frame, text="...", style="ResultValue.TLabel"); rv_confidence_label.grid(row=res_row, column=1, sticky="ew", padx=5); res_row+=1
     ttk.Separator(rv_details_frame, orient='horizontal').grid(row=res_row, column=0, columnspan=2, sticky='ew', pady=8); res_row+=1
     ttk.Label(rv_details_frame, text="Magnetism Used:", style="ResultTitle.TLabel").grid(row=res_row, column=0, sticky="w", padx=5); rv_magnetism_label = ttk.Label(rv_details_frame, text="...", style="ResultValue.TLabel"); rv_magnetism_label.grid(row=res_row, column=1, sticky="ew", padx=5); res_row+=1
     ttk.Label(rv_details_frame, text="LDC (Delta) Used:", style="ResultTitle.TLabel").grid(row=res_row, column=0, sticky="w", padx=5); rv_ldc_label = ttk.Label(rv_details_frame, text="...", style="ResultValue.TLabel"); rv_ldc_label.grid(row=res_row, column=1, sticky="ew", padx=5); res_row+=1
-    rv_classify_another_button = ttk.Button(rv_content_frame, text="<< Classify Another", command=show_live_view); rv_classify_another_button.grid(row=3+res_row, column=0, columnspan=2, pady=(10, 5)) # Adjusted row based on res_row
+    rv_classify_another_button = ttk.Button(rv_content_frame, text="<< Classify Another", command=show_live_view); rv_classify_another_button.grid(row=res_row, column=0, columnspan=2, pady=(10, 5)) # Use final res_row
 
     # --- Set Initial State ---
-    clear_results_display() # Set placeholder values in results view
-    show_live_view() # Make the live view visible first
+    clear_results_display(); show_live_view()
 
 # ==========================
 # === Main Execution =======
@@ -578,20 +636,13 @@ def setup_gui():
 def run_application():
     """Sets up GUI and runs the main Tkinter event loop."""
     global window; setup_gui()
-    # Set initial status texts after GUI setup
     if not camera: lv_camera_label.configure(text="Camera Failed", image='')
     if not hall_sensor: lv_magnetism_label.config(text="N/A")
     if not ldc_initialized: lv_ldc_label.config(text="N/A")
-    if not interpreter: # Check if AI loaded
-        if lv_classify_button: lv_classify_button.config(state=tk.DISABLED)
-        messagebox.showwarning("AI Init Failed", "AI components failed. Classification disabled.")
-    # Start background update loops
-    print("Starting update loops...")
-    update_camera_feed()
-    update_magnetism()
-    update_ldc_reading()
-    print("Starting Tkinter main loop...")
-    window.mainloop() # Start the GUI event loop
+    if not interpreter:
+        if lv_classify_button: lv_classify_button.config(state=tk.DISABLED); messagebox.showwarning("AI Init Failed", "AI components failed.")
+    print("Starting update loops..."); update_camera_feed(); update_magnetism(); update_ldc_reading()
+    print("Starting Tkinter main loop..."); window.mainloop()
 
 # --- Cleanup ---
 def cleanup_resources():
@@ -620,7 +671,7 @@ if __name__ == '__main__':
          print("\nKeyboard interrupt detected. Exiting.")
     except Exception as e:
         print(f"FATAL ERROR in main execution: {e}")
-        try: # Attempt to show error in GUI messagebox
+        try: # Attempt to show error in GUI if possible
             if window and window.winfo_exists(): messagebox.showerror("Fatal Error", f"An unrecoverable error occurred:\n{e}")
         except Exception: pass # Ignore if GUI isn't available
         import traceback; traceback.print_exc() # Print full traceback to console
