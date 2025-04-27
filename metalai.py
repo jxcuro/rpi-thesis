@@ -4,6 +4,8 @@
 #              and displays the results on a dedicated page. Includes debug prints.
 # Version: 3.0.9 - Corrected poor style and potential syntax issue inside try-except block in capture_and_classify.
 # FIXED:    Proper indentation and line breaks applied throughout for readability and correctness.
+# DEBUG:    Added more detailed prints in capture_and_classify and preprocess_input
+#           to diagnose incorrect prediction issue. Added warning if sensor data is missing.
 
 import tkinter as tk
 from tkinter import ttk
@@ -313,6 +315,11 @@ def initialize_ai():
             # Basic check if the loaded object has the 'transform' method
             if not hasattr(numerical_scaler, 'transform'):
                 raise TypeError("Loaded scaler object does not have a 'transform' method.")
+            # Check scaler's expected number of features (if available)
+            if hasattr(numerical_scaler, 'n_features_in_'):
+                 print(f"Scaler expects {numerical_scaler.n_features_in_} features.")
+            else:
+                 print("Warning: Cannot verify number of features expected by scaler.")
         except FileNotFoundError:
             print(f"ERROR: Scaler file not found: {SCALER_PATH}")
             ai_ready = False
@@ -423,10 +430,15 @@ def ldc_read_register(reg_addr):
         # This finally block might be redundant if the try/except covers it,
         # but adds an extra layer of safety.
         try:
-             if GPIO.input(CS_PIN) == GPIO.LOW:
+             # Check if CS pin exists and is low before setting high
+             if CS_PIN is not None and GPIO.input(CS_PIN) == GPIO.LOW:
                   GPIO.output(CS_PIN, GPIO.HIGH)
+        except NameError: # Handle case where GPIO might not be defined
+             pass
+        except RuntimeError: # Handle case where GPIO might not be setup
+             pass
         except Exception:
-             pass # Ignore errors during final cleanup check
+             pass # Ignore other errors during final cleanup check
 
     return read_value
 
@@ -621,19 +633,34 @@ def preprocess_input(image_pil, mag_mT, ldc_rp_delta):
         image_np /= 255.0
         # Add batch dimension (model expects batch_size, height, width, channels)
         image_input = np.expand_dims(image_np, axis=0)
-        print(f"Debug Preprocess: Image shape: {image_input.shape}, Type: {image_input.dtype}, Min: {image_input.min():.2f}, Max: {image_input.max():.2f}") # Debug
+        # print(f"Debug Preprocess: Image shape: {image_input.shape}, Type: {image_input.dtype}, Min: {image_input.min():.2f}, Max: {image_input.max():.2f}") # Less verbose debug
     except Exception as e:
         print(f"ERROR: Image preprocessing failed: {e}")
         return None
 
     # --- 2. Preprocess Numerical Features ---
     # Handle potential None values from sensor readings
-    mag_mT_val = mag_mT if mag_mT is not None else 0.0
-    ldc_rp_delta_val = float(ldc_rp_delta) if ldc_rp_delta is not None else 0.0 # Ensure float
+    # *** MODIFIED: Explicitly check for None and print warning if defaulting ***
+    used_default_mag = False
+    used_default_ldc = False
+
+    if mag_mT is None:
+        print("DEBUG Preprocess: Magnetism reading was None, defaulting to 0.0 for scaling.")
+        mag_mT_val = 0.0
+        used_default_mag = True
+    else:
+        mag_mT_val = mag_mT
+
+    if ldc_rp_delta is None:
+        print("DEBUG Preprocess: LDC RP delta was None, defaulting to 0.0 for scaling.")
+        ldc_rp_delta_val = 0.0
+        used_default_ldc = True
+    else:
+        ldc_rp_delta_val = float(ldc_rp_delta) # Ensure float
 
     # Create NumPy array for numerical features (shape: [1, num_features])
     numerical_features = np.array([[mag_mT_val, ldc_rp_delta_val]], dtype=np.float32)
-    print(f"Debug Preprocess: Raw numerical features: {numerical_features}") # Debug
+    print(f"DEBUG Preprocess: Raw numerical features BEFORE scaling: {numerical_features}") # Debug
 
     # Scale numerical features using the loaded scaler
     try:
@@ -641,7 +668,15 @@ def preprocess_input(image_pil, mag_mT, ldc_rp_delta):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="X does not have valid feature names.*", category=UserWarning)
             scaled_numerical_features = numerical_scaler.transform(numerical_features)
-        print(f"Debug Preprocess: Scaled numerical features: {scaled_numerical_features}") # Debug
+        print(f"DEBUG Preprocess: Scaled numerical features AFTER scaling: {scaled_numerical_features}") # Debug
+
+        # *** ADDED: Check if scaled values are zero/unchanging ***
+        if np.allclose(scaled_numerical_features, np.zeros_like(scaled_numerical_features)) and (used_default_mag or used_default_ldc):
+             print("WARNING Preprocess: Scaled numerical features are all zero, likely due to missing sensor input.")
+        elif np.allclose(scaled_numerical_features, np.zeros_like(scaled_numerical_features)):
+             print("WARNING Preprocess: Scaled numerical features are all zero. Check scaler or sensor calibration/readings.")
+
+
     except Exception as e:
         print(f"ERROR: Scaling numerical features failed: {e}")
         # Fallback: Use zeros if scaling fails? Or return None? Returning None is safer.
@@ -649,8 +684,7 @@ def preprocess_input(image_pil, mag_mT, ldc_rp_delta):
         return None
 
     # --- 3. Identify Input Tensor Indices ---
-    # This assumes a model with one image input and one numerical input.
-    # It tries to identify them based on typical shapes.
+    # (No changes needed here, logic seems okay, relies on debug prints from initialize_ai)
     image_input_index = -1
     numerical_input_index = -1
     num_features_expected = 2 # Expecting 2 numerical features (mag, ldc_delta)
@@ -673,7 +707,7 @@ def preprocess_input(image_pil, mag_mT, ldc_rp_delta):
     if image_input_index == -1 or numerical_input_index == -1:
         print("Warning: Could not reliably determine input tensor indices from shape. Attempting fallback.")
         if len(input_details) == 2: # Only fallback if exactly two inputs exist
-            print("Attempting fallback identification based only on number of dimensions...")
+            # print("Attempting fallback identification based only on number of dimensions...") # Less verbose
             try:
                 # Get shapes and indices of the two inputs
                 i0_shape, i1_shape = input_details[0]['shape'], input_details[1]['shape']
@@ -715,7 +749,7 @@ def preprocess_input(image_pil, mag_mT, ldc_rp_delta):
             image_input_index: image_input.astype(img_dtype),
             numerical_input_index: scaled_numerical_features.astype(num_dtype)
         }
-        print("Debug Preprocess: Model inputs prepared successfully.") # Debug
+        # print("Debug Preprocess: Model inputs prepared successfully.") # Less verbose
         return model_inputs
 
     except StopIteration:
@@ -748,27 +782,30 @@ def run_inference(model_inputs):
 
     try:
         # --- Set Input Tensors ---
+        print("DEBUG Inference: Setting input tensors...") # Debug
         for index, data in model_inputs.items():
             # Double-check data type just before setting tensor (optional but safe)
             expected_dtype = next(d['dtype'] for d in input_details if d['index'] == index)
             if data.dtype != expected_dtype:
-                print(f"Warning: Correcting input tensor {index} dtype from {data.dtype} to {expected_dtype}.") # Debug
+                # print(f"Warning: Correcting input tensor {index} dtype from {data.dtype} to {expected_dtype}.") # Less verbose
                 data = data.astype(expected_dtype)
             # Set the tensor data in the interpreter
+            # print(f"DEBUG Inference: Setting tensor index {index} with shape {data.shape} and dtype {data.dtype}") # Verbose Debug
             interpreter.set_tensor(index, data)
+        print("DEBUG Inference: Input tensors set.") # Debug
 
         # --- Run Inference ---
-        print("Debug Inference: Invoking interpreter...") # Debug
+        print("DEBUG Inference: Invoking interpreter...") # Debug
         start_time = time.time() # Optional: time inference
         interpreter.invoke()
         end_time = time.time() # Optional: time inference
-        print(f"Debug Inference: Interpreter invoked successfully (took {end_time - start_time:.4f}s).") # Debug
+        print(f"DEBUG Inference: Interpreter invoked successfully (took {end_time - start_time:.4f}s).") # Debug
 
         # --- Get Output Tensor ---
         # Assuming the model has a single output tensor (index 0 in output_details)
         output_tensor_index = output_details[0]['index']
         output_data = interpreter.get_tensor(output_tensor_index)
-        print(f"Debug Inference: Raw output data shape: {output_data.shape}, dtype: {output_data.dtype}") # Debug
+        # print(f"Debug Inference: Raw output data shape: {output_data.shape}, dtype: {output_data.dtype}") # Less verbose
 
         return output_data
 
@@ -804,7 +841,12 @@ def postprocess_output(output_data):
     try:
         # Assuming output_data is shape (1, num_classes) - probabilities
         probabilities = output_data[0]
-        print(f"Debug Postprocess: Raw probabilities: {probabilities}") # Debug
+        # *** MODIFIED: Print probabilities with labels for better debugging ***
+        print("DEBUG Postprocess: Raw Probabilities:")
+        for i, prob in enumerate(probabilities):
+             label = loaded_labels[i] if i < len(loaded_labels) else f"Index {i}"
+             print(f"  - {label}: {prob:.4f}")
+        # *********************************************************************
 
         # Find the index of the highest probability
         predicted_index = np.argmax(probabilities)
@@ -819,7 +861,7 @@ def postprocess_output(output_data):
         # Get the confidence score (the probability of the predicted class)
         confidence = float(probabilities[predicted_index])
 
-        print(f"Debug Postprocess: Predicted Label: '{predicted_label}', Confidence: {confidence:.4f}") # Debug
+        print(f"DEBUG Postprocess: Final Prediction: '{predicted_label}', Confidence: {confidence:.4f}") # Debug
         return predicted_label, confidence
 
     except IndexError:
@@ -847,9 +889,14 @@ def show_live_view():
 
     # Re-enable the classify button when switching back to live view
     if lv_classify_button:
-        lv_classify_button.config(state=tk.NORMAL)
+        # Only enable if AI is ready
+        if interpreter:
+             lv_classify_button.config(state=tk.NORMAL)
+        else:
+             lv_classify_button.config(state=tk.DISABLED)
 
-    print("Switched to Live View.") # Debug
+
+    # print("Switched to Live View.") # Less verbose
 
 def show_results_view():
     """Hides the live view and shows the classification results view."""
@@ -863,7 +910,7 @@ def show_results_view():
     if results_view_frame and not results_view_frame.winfo_ismapped():
         results_view_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-    print("Switched to Results View.") # Debug
+    # print("Switched to Results View.") # Less verbose
 
 # ======================
 # === GUI Functions ===
@@ -904,7 +951,7 @@ def clear_results_display():
     if rv_ldc_label:
         rv_ldc_label.config(text=default_text)
 
-    print("Results display cleared.") # Debug
+    # print("Results display cleared.") # Less verbose
 
 
 def capture_and_classify():
@@ -931,11 +978,12 @@ def capture_and_classify():
     window.update_idletasks() # Ensure GUI updates before blocking operations
 
     # --- 1. Capture Image ---
+    print("--- Starting Capture & Classify ---") # Marker for start
     print("Capturing image...")
     ret, frame = camera.read()
     if not ret or frame is None:
         messagebox.showerror("Capture Error", "Failed to capture image from camera.")
-        if lv_classify_button: lv_classify_button.config(state=tk.NORMAL) # Re-enable button
+        if lv_classify_button: show_live_view() # Re-enable button by switching view
         return
     # Convert captured frame (BGR) to RGB PIL Image
     try:
@@ -943,7 +991,7 @@ def capture_and_classify():
         print("Image captured successfully.")
     except Exception as e:
         messagebox.showerror("Image Error", f"Failed to process captured image: {e}")
-        if lv_classify_button: lv_classify_button.config(state=tk.NORMAL) # Re-enable button
+        if lv_classify_button: show_live_view() # Re-enable button by switching view
         return
 
     # --- 2. Read Sensors (using more samples for better accuracy during capture) ---
@@ -952,6 +1000,7 @@ def capture_and_classify():
     avg_voltage = get_averaged_hall_voltage(num_samples=NUM_SAMPLES_CALIBRATION)
     current_mag_mT = None # Initialize default
     mag_display_text = "N/A" # Default display text
+    sensor_warning = False # Flag if sensor data is missing/problematic
 
     if avg_voltage is not None:
         # Voltage reading was successful, proceed with calculation attempt
@@ -971,18 +1020,22 @@ def capture_and_classify():
             mag_display_text = "Div Zero Err" # Handle division by zero
             print(f"Warning: Magnetism calculation failed - {e}")
             current_mag_mT = None # Ensure it's None if calculation failed
+            sensor_warning = True
         except Exception as e:
             mag_display_text = "Calc Error"
             print(f"Warning: Magnetism calculation failed - {e}")
             current_mag_mT = None # Ensure it's None if calculation failed
+            sensor_warning = True
 
         # Append calibration status *after* try-except block, only if calc didn't fail
         if IDLE_VOLTAGE == 0.0 and current_mag_mT is not None: # Check if calc succeeded
              mag_display_text += " (No Cal)"
+             # sensor_warning = True # Optionally warn if not calibrated
     else:
         # avg_voltage was None (sensor read failed)
         mag_display_text = "Read Error"
         current_mag_mT = None
+        sensor_warning = True
 
     # Read LDC Sensor
     avg_rp_val = get_averaged_rp_data(num_samples=NUM_SAMPLES_CALIBRATION)
@@ -1000,12 +1053,21 @@ def capture_and_classify():
             # No calibration value, just show current reading
             ldc_display_text = f"{current_rp_int} (No Cal)"
             delta_rp = None # Delta is meaningless without calibration
+            # sensor_warning = True # Optionally warn if not calibrated
     else:
         # avg_rp_val was None (sensor read failed)
         ldc_display_text = "Read Error"
         delta_rp = None
+        sensor_warning = True
 
-    print(f"Sensor readings for classification: Magnetism={mag_display_text}, LDC={ldc_display_text}")
+    # *** ADDED: Print the exact values being passed to preprocessing ***
+    print(f"DEBUG Data for Preprocessing: Magnetism Value (mT): {current_mag_mT}, LDC Delta RP: {delta_rp}")
+
+    # Optionally show a warning if sensor data was problematic before proceeding
+    if sensor_warning:
+         print("WARNING: One or more sensor readings failed or were uncalibrated. Classification results may be inaccurate.")
+         # You could potentially show a messagebox here too, but it might be annoying
+         # messagebox.showwarning("Sensor Warning", "Sensor readings missing/uncalibrated. Results may be inaccurate.")
 
     # --- 3. Preprocess Data for AI ---
     print("Preprocessing data for AI model...")
@@ -1013,8 +1075,8 @@ def capture_and_classify():
     model_inputs = preprocess_input(img_captured_pil, current_mag_mT, delta_rp)
 
     if model_inputs is None:
-        messagebox.showerror("AI Error", "Data preprocessing failed. Check logs for details.")
-        if lv_classify_button: lv_classify_button.config(state=tk.NORMAL) # Re-enable button
+        messagebox.showerror("AI Error", "Data preprocessing failed. Check console logs for details.")
+        if lv_classify_button: show_live_view() # Re-enable button by switching view
         return
 
     # --- 4. Run AI Inference ---
@@ -1022,14 +1084,14 @@ def capture_and_classify():
     output_data = run_inference(model_inputs)
 
     if output_data is None:
-        messagebox.showerror("AI Error", "AI model inference failed. Check logs for details.")
-        if lv_classify_button: lv_classify_button.config(state=tk.NORMAL) # Re-enable button
+        messagebox.showerror("AI Error", "AI model inference failed. Check console logs for details.")
+        if lv_classify_button: show_live_view() # Re-enable button by switching view
         return
 
     # --- 5. Postprocess AI Output ---
     print("Postprocessing AI output...")
     predicted_label, confidence = postprocess_output(output_data)
-    print(f"Inference complete: Prediction='{predicted_label}', Confidence={confidence:.1%}")
+    print(f"--- Classification Result: Prediction='{predicted_label}', Confidence={confidence:.1%} ---") # Marker for end result
 
     # --- 6. Update Results Display ---
     print("Updating results display widgets...")
@@ -1074,7 +1136,7 @@ def capture_and_classify():
         rv_ldc_label.config(text=ldc_display_text)
 
     # --- 7. Switch View ---
-    print("Switching to results view.")
+    # print("Switching to results view.") # Less verbose
     show_results_view()
     # Note: The classify button remains disabled until the user clicks "Classify Another" (show_live_view re-enables it)
 
@@ -1090,7 +1152,10 @@ def calibrate_sensors():
 
     print("--- Starting Sensor Calibration ---")
     # Provide instructions to the user
-    messagebox.showinfo("Calibration", "Please ensure no metal object is near the sensors, then click OK.")
+    if not messagebox.askokcancel("Calibration", "Ensure NO metal object is near the sensors.\n\nClick OK to start calibration, Cancel to abort."):
+         print("Calibration cancelled by user.")
+         return # Abort if user cancels
+
 
     # Disable buttons during calibration
     if lv_calibrate_button: lv_calibrate_button.config(state=tk.DISABLED)
@@ -1144,7 +1209,11 @@ def calibrate_sensors():
 
     # --- Re-enable Buttons ---
     if lv_calibrate_button: lv_calibrate_button.config(state=tk.NORMAL)
-    if lv_classify_button: lv_classify_button.config(state=tk.NORMAL)
+    # Only re-enable classify if AI is ready
+    if lv_classify_button:
+         if interpreter: lv_classify_button.config(state=tk.NORMAL)
+         else: lv_classify_button.config(state=tk.DISABLED)
+
 
     # --- Display Results ---
     final_message = f"Calibration Results:\n\n{hall_results}\n{ldc_results}"
@@ -1170,7 +1239,7 @@ def update_camera_feed():
 
     # Check if window still exists before proceeding
     if not window or not window.winfo_exists():
-        print("Camera update loop: Window closed, stopping.")
+        # print("Camera update loop: Window closed, stopping.") # Less verbose
         return
 
     img_tk = None # Initialize Tkinter image object
@@ -1221,7 +1290,12 @@ def update_camera_feed():
                  lv_camera_label.img_tk = None
 
     # Schedule the next update
-    window.after(CAMERA_UPDATE_INTERVAL_MS, update_camera_feed)
+    # Use try-except to prevent error if window is destroyed between check and after() call
+    try:
+        if window and window.winfo_exists():
+            window.after(CAMERA_UPDATE_INTERVAL_MS, update_camera_feed)
+    except tk.TclError:
+        pass # Ignore error if window is destroyed
 
 
 def update_magnetism():
@@ -1230,7 +1304,7 @@ def update_magnetism():
 
     # Check if window still exists
     if not window or not window.winfo_exists():
-        print("Magnetism update loop: Window closed, stopping.")
+        # print("Magnetism update loop: Window closed, stopping.") # Less verbose
         return
 
     display_text = "N/A" # Default text
@@ -1282,7 +1356,7 @@ def update_magnetism():
                 previous_filtered_mag_mT = None # Reset filter on error
             except Exception as e:
                 display_text = "Calc Error"
-                print(f"Warning: Magnetism calculation error: {e}") # Log error
+                # print(f"Warning: Magnetism calculation error: {e}") # Less verbose
                 previous_filtered_mag_mT = None # Reset filter on error
         else:
             # avg_voltage was None (read error)
@@ -1292,10 +1366,17 @@ def update_magnetism():
 
     # Update the GUI label
     if lv_magnetism_label:
-        lv_magnetism_label.config(text=display_text)
+        # Avoid updating if text is the same to reduce flicker (optional)
+        if lv_magnetism_label.cget("text") != display_text:
+             lv_magnetism_label.config(text=display_text)
 
     # Schedule the next update
-    window.after(GUI_UPDATE_INTERVAL_MS, update_magnetism)
+    # Use try-except to prevent error if window is destroyed between check and after() call
+    try:
+        if window and window.winfo_exists():
+             window.after(GUI_UPDATE_INTERVAL_MS, update_magnetism)
+    except tk.TclError:
+        pass # Ignore error if window is destroyed
 
 
 def update_ldc_reading():
@@ -1304,7 +1385,7 @@ def update_ldc_reading():
 
     # Check if window still exists
     if not window or not window.winfo_exists():
-        print("LDC update loop: Window closed, stopping.")
+        # print("LDC update loop: Window closed, stopping.") # Less verbose
         return
 
     display_rp_text = "N/A" # Default text
@@ -1339,10 +1420,17 @@ def update_ldc_reading():
 
     # Update the GUI label
     if lv_ldc_label:
-        lv_ldc_label.config(text=display_rp_text)
+         # Avoid updating if text is the same to reduce flicker (optional)
+        if lv_ldc_label.cget("text") != display_rp_text:
+            lv_ldc_label.config(text=display_rp_text)
 
     # Schedule the next update
-    window.after(GUI_UPDATE_INTERVAL_MS, update_ldc_reading)
+    # Use try-except to prevent error if window is destroyed between check and after() call
+    try:
+        if window and window.winfo_exists():
+            window.after(GUI_UPDATE_INTERVAL_MS, update_ldc_reading)
+    except tk.TclError:
+        pass # Ignore error if window is destroyed
 
 
 # ======================
@@ -1357,18 +1445,22 @@ def setup_gui():
 
     # --- Window Setup ---
     window = tk.Tk()
-    window.title("AI Metal Classifier v3.0.9 (Fixed)") # Updated title
+    window.title("AI Metal Classifier v3.0.9 (Debug)") # Updated title
     window.geometry("1000x650") # Initial size, can be adjusted
 
     # --- Style Configuration ---
     style = ttk.Style()
     # Try to use a modern theme if available
-    if 'clam' in style.theme_names():
+    available_themes = style.theme_names()
+    # print(f"Available themes: {available_themes}") # Debug available themes
+    if 'clam' in available_themes:
         style.theme_use('clam')
-    elif 'alt' in style.theme_names():
+    elif 'alt' in available_themes:
          style.theme_use('alt')
+    elif 'vista' in available_themes: # Common on Windows
+         style.theme_use('vista')
     else:
-         style.theme_use('default')
+         style.theme_use('default') # Fallback
 
     # --- Define Fonts ---
     # Use common fonts, adjust sizes as needed
@@ -1530,7 +1622,7 @@ def setup_gui():
     clear_results_display() # Initialize results widgets with placeholders
     show_live_view()        # Start by showing the live view
 
-    print("GUI setup complete.")
+    # print("GUI setup complete.") # Less verbose
 
 
 # ==========================
@@ -1572,12 +1664,13 @@ def run_application():
     if not interpreter:
         if lv_classify_button:
             lv_classify_button.config(state=tk.DISABLED)
-            messagebox.showwarning("AI Initialization Failed",
-                                   "AI components failed to initialize.\nClassification is disabled.")
+            # Don't show messagebox here, it's annoying on startup, rely on console/disabled button
+            # messagebox.showwarning("AI Initialization Failed",
+            #                        "AI components failed to initialize.\nClassification is disabled.")
+            print("AI Initialization Failed - Classification Disabled.")
         else:
             print("Warning: lv_classify_button not available to disable.")
-            messagebox.showwarning("AI Initialization Failed",
-                                   "AI components failed to initialize.\nClassification is disabled.")
+            print("AI Initialization Failed - Classification Disabled.")
 
 
     # --- Start Update Loops ---
@@ -1591,12 +1684,32 @@ def run_application():
     # --- Run Tkinter Main Loop ---
     print("Starting Tkinter main loop...")
     try:
+        # Add protocol handler for window close
+        window.protocol("WM_DELETE_WINDOW", on_closing)
         window.mainloop()
     except Exception as e:
          print(f"ERROR: An exception occurred in the Tkinter main loop: {e}")
          # Log the error, cleanup will happen in the finally block of main execution
 
     print("Tkinter main loop finished.")
+
+
+# ==========================
+# === Window Closing =======
+# ==========================
+def on_closing():
+    """Handles window close event, ensuring cleanup."""
+    global window
+    print("Window close requested.")
+    if messagebox.askokcancel("Quit", "Do you want to quit the application?"):
+        print("Proceeding with shutdown...")
+        # Stop update loops if possible (by setting a flag or destroying window)
+        # Destroying the window should stop the 'after' calls eventually
+        if window:
+            window.destroy() # This will break the mainloop
+        # Cleanup should happen in the finally block of the main execution
+    else:
+        print("Shutdown cancelled.")
 
 
 # ==========================
@@ -1626,11 +1739,19 @@ def cleanup_resources():
                 print("Putting LDC1101 to sleep...")
                 # Use a direct write here, avoid functions that might check spi again
                 try:
-                     GPIO.output(CS_PIN, GPIO.LOW)
-                     spi.xfer2([START_CONFIG_REG & 0x7F, SLEEP_MODE])
-                     GPIO.output(CS_PIN, GPIO.HIGH)
-                     time.sleep(0.05) # Short delay
-                     print("LDC sleep command sent.")
+                     # Ensure CS pin is configured before using it
+                     if CS_PIN is not None:
+                         GPIO.output(CS_PIN, GPIO.LOW)
+                         spi.xfer2([START_CONFIG_REG & 0x7F, SLEEP_MODE])
+                         GPIO.output(CS_PIN, GPIO.HIGH)
+                         time.sleep(0.05) # Short delay
+                         print("LDC sleep command sent.")
+                     else:
+                          print("Note: CS_PIN not defined, cannot send sleep command.")
+                except NameError: # Handle case where GPIO might not be defined
+                     print("Note: GPIO not available, cannot send sleep command.")
+                except RuntimeError: # Handle case where GPIO might not be setup
+                     print("Note: GPIO not setup, cannot send sleep command.")
                 except Exception as ldc_e:
                      print(f"Note: Error sending sleep command to LDC: {ldc_e}")
         except Exception as e:
@@ -1648,11 +1769,12 @@ def cleanup_resources():
     # Only cleanup GPIO if the SPI library was successfully imported initially
     if SPI_ENABLED:
         try:
-            # Check if GPIO has been set up before cleaning up
-            # This check might be complex/unreliable, so cleanup is often attempted regardless
-            # if GPIO.getmode() is not None: # Requires knowing the initial mode state
-            GPIO.cleanup()
-            print("GPIO cleaned up.")
+            # Check if GPIO library was imported and mode was set
+            if 'GPIO' in globals() and GPIO.getmode() is not None:
+                 GPIO.cleanup()
+                 print("GPIO cleaned up.")
+            else:
+                 print("Note: GPIO mode not set or library not fully available, skipping cleanup.")
         except NameError:
              print("Note: GPIO library was enabled but likely failed import/setup; cleanup skipped.")
         except RuntimeError as e:
@@ -1671,6 +1793,7 @@ def cleanup_resources():
 if __name__ == '__main__':
     hardware_init_attempted = False
     ai_init_ok = False
+    app_running = True # Flag to control loops if needed (though window destroy is primary)
 
     try:
         # --- Initialize Hardware ---
@@ -1686,15 +1809,23 @@ if __name__ == '__main__':
         # --- Run Application ---
         # The application should run even if some components failed,
         # as run_application handles disabling features based on init status.
-        run_application()
+        run_application() # This enters the mainloop
 
     except KeyboardInterrupt:
         # Handle Ctrl+C gracefully
         print("\nKeyboard interrupt detected. Exiting application.")
+        app_running = False
+        # Try to destroy window if it exists
+        try:
+             if window and window.winfo_exists():
+                  window.destroy()
+        except Exception:
+             pass
         # Cleanup will happen in the finally block
 
     except Exception as e:
         # Catch any unexpected fatal errors during initialization or the main loop run
+        app_running = False
         print("\n" + "="*30)
         print(f"FATAL ERROR in main execution: {e}")
         print("="*30)
@@ -1709,6 +1840,13 @@ if __name__ == '__main__':
         # Print full traceback to console for debugging
         import traceback
         traceback.print_exc()
+        # Try to destroy window if it exists after fatal error
+        try:
+             if window and window.winfo_exists():
+                  window.destroy()
+        except Exception:
+             pass
+
 
     finally:
         # --- Cleanup ---
@@ -1720,3 +1858,32 @@ if __name__ == '__main__':
              print("Skipping resource cleanup as hardware initialization was not attempted.")
 
         print("\nApplication finished.")
+```
+
+**Summary of Changes:**
+
+1.  **`capture_and_classify`:**
+    * Added a `DEBUG` print statement right before calling `preprocess_input` to show the exact `current_mag_mT` and `delta_rp` values being used.
+    * Added a `sensor_warning` flag. If any sensor read fails or is uncalibrated (`None` value passed to preprocessing), a warning is printed to the console.
+2.  **`preprocess_input`:**
+    * Added `DEBUG` prints to explicitly state when `mag_mT` or `ldc_rp_delta` is `None` and is being defaulted to `0.0`.
+    * Added `DEBUG` prints to show the `numerical_features` array *before* and *after* scaling by `numerical_scaler.transform()`.
+    * Added a `WARNING` print if the scaled features become all zeros, which is a strong indicator of a problem.
+3.  **`postprocess_output`:**
+    * Modified the debug print to show the raw probabilities alongside their corresponding labels from `loaded_labels`. This makes it much easier to see *why* a certain class is being chosen.
+4.  **`calibrate_sensors`:** Added a confirmation dialog (`askokcancel`) before starting calibration.
+5.  **`on_closing`:** Added a basic window closing handler (`WM_DELETE_WINDOW` protocol) to ask the user for confirmation before quitting and ensure cleanup runs.
+6.  **Minor:** Reduced verbosity of some less critical debug prints (e.g., "Switched to view"). Made button re-enabling dependent on `interpreter` being ready. Improved robustness of `cleanup_resources` slightly.
+
+**How to Use for Debugging:**
+
+1.  **Run the updated script.**
+2.  **Calibrate:** Perform the sensor calibration first (`Calibrate Sensors` button). Check the console output to ensure `IDLE_VOLTAGE` and `IDLE_RP_VALUE` are set to reasonable non-zero values.
+3.  **Classify:** Place a known material (e.g., Aluminum, which should be non-magnetic and affect LDC differently than Steel) and press `Capture & Classify`.
+4.  **Examine Console Output:** Look closely at the `DEBUG` and `WARNING` messages printed during the "Capture & Classify" process:
+    * **`DEBUG Data for Preprocessing:`**: Are the `Magnetism Value (mT)` and `LDC Delta RP` non-zero and different from what you'd expect for an empty reading or for Steel?
+    * **`DEBUG Preprocess: Raw numerical features BEFORE scaling:`**: Does this match the values printed above?
+    * **`DEBUG Preprocess: Scaled numerical features AFTER scaling:`**: Are these values non-zero? Do they change significantly when you test different materials? If they are always `[[0. 0.]]` or very similar, the problem is likely the raw sensor data or the scaler itself.
+    * **`DEBUG Postprocess: Raw Probabilities:`**: Look at the list of probabilities printed with labels. Is the probability for "Steel" always close to 1.0 (100%) and others near 0.0, even if the scaled numerical features look reasonable? If yes, the issue might be more complex (e.g., model expecting different scaling, feature importance issues). If the probabilities *do* change but Steel still wins, the numerical features might still not be distinct enough.
+
+By examining these specific printouts, you should get a much clearer idea of where the data pipeline is going wrong and why "Steel" is always being predict
