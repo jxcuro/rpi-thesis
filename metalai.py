@@ -1,8 +1,8 @@
-# CODE 3.0.6 - AI Metal Classifier GUI with Results Page
+# CODE 3.0.8 - AI Metal Classifier GUI with Results Page
 # Description: Displays live sensor data and camera feed.
 #              Captures image and sensor readings, classifies metal using a TFLite model,
 #              and displays the results on a dedicated page. Includes debug prints.
-# Version: 3.0.6 - Revalidated indentation, especially in preprocess_input fallback logic.
+# Version: 3.0.8 - Corrected REPEATED SyntaxError in capture_and_classify by properly indenting try-except.
 
 import tkinter as tk
 from tkinter import ttk
@@ -340,62 +340,25 @@ def get_averaged_rp_data(num_samples=NUM_SAMPLES_PER_UPDATE):
 def preprocess_input(image_pil, mag_mT, ldc_rp_delta):
     """Prepares image and sensor data for the TFLite model."""
     global numerical_scaler, input_details
-    if numerical_scaler is None or input_details is None:
-        print("ERROR: Scaler or model details missing.")
-        return None
-
-    # Image Processing
+    if numerical_scaler is None or input_details is None: print("ERROR: Scaler or model details missing."); return None
+    try: img_resized=image_pil.resize((AI_IMG_WIDTH,AI_IMG_HEIGHT),Image.Resampling.LANCZOS); image_np=np.array(img_resized.convert('RGB'),dtype=np.float32)/255.0; image_input=np.expand_dims(image_np,axis=0)
+    except Exception as e: print(f"ERROR: Image preprocessing failed: {e}"); return None
+    mag_mT_val=mag_mT if mag_mT is not None else 0.0; ldc_rp_delta_val=ldc_rp_delta if ldc_rp_delta is not None else 0.0; numerical_features=np.array([[mag_mT_val,ldc_rp_delta_val]],dtype=np.float32)
     try:
-        img_resized = image_pil.resize((AI_IMG_WIDTH, AI_IMG_HEIGHT), Image.Resampling.LANCZOS)
-        image_np = np.array(img_resized.convert('RGB'), dtype=np.float32) / 255.0
-        image_input = np.expand_dims(image_np, axis=0)
-    except Exception as e:
-        print(f"ERROR: Image preprocessing failed: {e}")
-        return None
-
-    # Numerical Processing
-    mag_mT_val = mag_mT if mag_mT is not None else 0.0
-    ldc_rp_delta_val = ldc_rp_delta if ldc_rp_delta is not None else 0.0
-    numerical_features = np.array([[mag_mT_val, ldc_rp_delta_val]], dtype=np.float32)
-    try:
-        # Suppress sklearn warning about feature names if it persists and is known to be benign
-        with warnings.catch_warnings():
-             warnings.filterwarnings("ignore", message="X does not have valid feature names.*", category=UserWarning)
-             scaled_numerical_features = numerical_scaler.transform(numerical_features)
-    except Exception as e:
-        print(f"ERROR: Scaling failed: {e}")
-        scaled_numerical_features = np.zeros_like(numerical_features) # Default on error
-
-    # --- Add Debug prints ---
-    print(f"Debug Preprocess: Image shape: {image_input.shape}, min: {image_input.min():.2f}, max: {image_input.max():.2f}")
-    print(f"Debug Preprocess: Raw numerical: {numerical_features}")
-    print(f"Debug Preprocess: Scaled numerical: {scaled_numerical_features}")
-    # ------------------------
-
-    # Determine Input Indices Dynamically
-    image_input_index, numerical_input_index = -1, -1
-    num_features_expected = 2 # Should match the shape of numerical_features scaled
+        with warnings.catch_warnings(): warnings.filterwarnings("ignore",message="X does not have valid feature names.*",category=UserWarning); scaled_numerical_features=numerical_scaler.transform(numerical_features)
+    except Exception as e: print(f"ERROR: Scaling failed: {e}"); scaled_numerical_features=np.zeros_like(numerical_features)
+    print(f"Debug Preprocess: Image shape: {image_input.shape}, min: {image_input.min():.2f}, max: {image_input.max():.2f}"); print(f"Debug Preprocess: Raw numerical: {numerical_features}"); print(f"Debug Preprocess: Scaled numerical: {scaled_numerical_features}")
+    image_input_index,numerical_input_index = -1,-1; num_features_expected = 2
     for detail in input_details:
         shape, index = detail['shape'], detail['index']
-        # Check for image input shape (Batch, H, W, Channels)
-        if len(shape) == 4 and shape[1:4] == (AI_IMG_HEIGHT, AI_IMG_WIDTH, 3):
-            image_input_index = index
-        # Check for numerical input shape (Batch, NumFeatures)
-        elif len(shape) == 2 and shape[1] == num_features_expected:
-            numerical_input_index = index
-
-    # --- Fallback logic block STARTS here ---
-    # Check if primary identification failed
-    if image_input_index == -1 or numerical_input_index == -1:
-        # This block is indented relative to the above 'if'
+        if len(shape)==4 and shape[1:4]==(AI_IMG_HEIGHT,AI_IMG_WIDTH,3): image_input_index=index
+        elif len(shape)==2 and shape[1]==num_features_expected: numerical_input_index=index
+    if image_input_index==-1 or numerical_input_index==-1:
         print("Warning: Could not reliably determine input tensor indices from shape. Trying fallback.")
-
-        # This 'if' is indented relative to the outer 'if'
+        # --- Start of properly indented fallback block ---
         if len(input_details) == 2:
-            # This block is indented relative to 'if len(input_details) == 2:'
             print("Attempting fallback identification based only on number of dimensions...")
             try:
-                # This block is indented relative to 'try:'
                 i0_shape, i1_shape = input_details[0]['shape'], input_details[1]['shape']
                 i0_idx, i1_idx = input_details[0]['index'], input_details[1]['index']
                 if len(i0_shape) == 4 and len(i1_shape) == 2:
@@ -408,35 +371,25 @@ def preprocess_input(image_pil, mag_mT, ldc_rp_delta):
                     print("Fallback fail: Dim mismatch (not 4D and 2D).")
                     return None # Exit if fallback assumptions don't match
             except Exception as e:
-                 # This block is indented relative to 'except:'
                  print(f"Fallback fail: {e}")
                  return None
         else:
-            # This block is indented relative to 'else:'
             print("Cannot fallback: Model does not have exactly 2 inputs.")
             return None
-        # --- Fallback logic block ENDS here ---
+        # --- End of properly indented fallback block ---
 
         # Check again if fallback *still* failed or didn't run
-        # This 'if' is indented relative to the *outer* 'if' on line 363 (approx)
         if image_input_index == -1 or numerical_input_index == -1:
-            print("ERROR: Fallback failed to identify input indices.")
+            print("ERROR: Fallback failed to identify input indices.") # Corrected message
             return None
-
-    # Prepare the final input dictionary
     try:
-        img_dtype = next(d['dtype'] for d in input_details if d['index'] == image_input_index)
-        num_dtype = next(d['dtype'] for d in input_details if d['index'] == numerical_input_index)
-        model_inputs = {
-            image_input_index: image_input.astype(img_dtype),
-            numerical_input_index: scaled_numerical_features.astype(num_dtype)
-        }
+        img_dtype=next(d['dtype'] for d in input_details if d['index']==image_input_index)
+        num_dtype=next(d['dtype'] for d in input_details if d['index']==numerical_input_index)
+        model_inputs={image_input_index:image_input.astype(img_dtype),numerical_input_index:scaled_numerical_features.astype(num_dtype)}
     except Exception as e:
         print(f"ERROR: Setting input types failed: {e}")
         return None
-
     return model_inputs
-
 
 def run_inference(model_inputs):
     """Runs inference using the loaded TFLite model."""
@@ -459,11 +412,8 @@ def postprocess_output(output_data):
     global loaded_labels
     if output_data is None or not loaded_labels: return "Error", 0.0
     try:
-        probabilities = output_data[0]
-        print(f"Debug Postprocess: Raw output tensor: {probabilities}") # DEBUG PRINT
-        predicted_index = np.argmax(probabilities)
-        predicted_label = loaded_labels[predicted_index]
-        confidence = float(probabilities[predicted_index])
+        probabilities = output_data[0]; print(f"Debug Postprocess: Raw output tensor: {probabilities}") # DEBUG PRINT
+        predicted_index = np.argmax(probabilities); predicted_label = loaded_labels[predicted_index]; confidence = float(probabilities[predicted_index])
         return predicted_label, confidence
     except IndexError: print(f"ERROR: Output shape unexpected: {output_data.shape}"); return "Shape Err", 0.0
     except Exception as e: print(f"ERROR: Postprocessing failed: {e}"); return "Post Err", 0.0
@@ -473,14 +423,14 @@ def postprocess_output(output_data):
 # ==============================
 def show_live_view():
     """Hides results view and shows the live camera/sensor view."""
-    global live_view_frame, results_view_frame, lv_classify_button
+    global live_view_frame, results_view_frame, lv_classify_button;
     if results_view_frame: results_view_frame.pack_forget()
     if live_view_frame: live_view_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
     if lv_classify_button: lv_classify_button.config(state=tk.NORMAL)
 
 def show_results_view():
     """Hides live view and shows the classification results view."""
-    global live_view_frame, results_view_frame
+    global live_view_frame, results_view_frame;
     if live_view_frame: live_view_frame.pack_forget()
     if results_view_frame: results_view_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
@@ -489,10 +439,10 @@ def show_results_view():
 # ======================
 def clear_results_display():
     """Clears the classification results display widgets to placeholders."""
-    global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, placeholder_img_tk
+    global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, placeholder_img_tk;
     if rv_image_label:
         if placeholder_img_tk: rv_image_label.img_tk=placeholder_img_tk; rv_image_label.config(image=placeholder_img_tk,text="")
-        else: rv_image_label.config(image='', text="No Image") # Fallback if placeholder failed
+        else: rv_image_label.config(image='', text="No Image") # Fallback
     if rv_prediction_label: rv_prediction_label.config(text="...")
     if rv_confidence_label: rv_confidence_label.config(text="...")
     if rv_magnetism_label: rv_magnetism_label.config(text="...")
@@ -500,20 +450,55 @@ def clear_results_display():
 
 def capture_and_classify():
     """Captures image and sensor data, runs AI classification, displays results on results page."""
-    global lv_classify_button, window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, interpreter
+    global lv_classify_button, window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, interpreter;
     if not interpreter or not camera: messagebox.showerror("Error", "AI/Cam not ready."); return
-    lv_classify_button.config(state=tk.DISABLED); window.update_idletasks()
-    print("Capturing image..."); ret,frame=camera.read()
+    lv_classify_button.config(state=tk.DISABLED); window.update_idletasks(); print("Capturing image..."); ret,frame=camera.read()
     if not ret: messagebox.showerror("Capture Error", "Failed capture."); lv_classify_button.config(state=tk.NORMAL); return
     img_captured_pil=Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)); print("Image captured.")
-    print("Reading sensors..."); avg_voltage=get_averaged_hall_voltage(NUM_SAMPLES_CALIBRATION); current_mag_mT,mag_display_text=None,"N/A"
-    if avg_voltage is not None: try: idle_v=IDLE_VOLTAGE if IDLE_VOLTAGE!=0 else avg_voltage; current_mag_mT=(avg_voltage-idle_v)/SENSITIVITY_V_PER_MILLITESLA; mag_display_text=f"{current_mag_mT:+.3f} mT" except: mag_display_text="Calc Error"; if IDLE_VOLTAGE==0: mag_display_text+=" (No Cal)"
-    current_rp_val_avg=get_averaged_rp_data(NUM_SAMPLES_CALIBRATION); current_rp_val,delta_rp,ldc_display_text=None,None,"N/A"
-    if current_rp_val_avg is not None: current_rp_val=int(current_rp_val_avg);
-        if IDLE_RP_VALUE!=0: delta_rp=current_rp_val-IDLE_RP_VALUE; ldc_display_text=f"{current_rp_val} (Delta {delta_rp:+,})" # Use "Delta"
+
+    print("Reading sensors...")
+    avg_voltage=get_averaged_hall_voltage(NUM_SAMPLES_CALIBRATION)
+
+    # --- CORRECTED Block for Magnetism Calculation & Display Text ---
+    current_mag_mT = None # Initialize default
+    mag_display_text = "N/A" # Default display text
+
+    if avg_voltage is not None:
+        # Voltage reading was successful, proceed with calculation attempt
+        try:
+            # Indented block for the try statement
+            idle_v = IDLE_VOLTAGE if IDLE_VOLTAGE != 0 else avg_voltage
+            current_mag_mT = (avg_voltage - idle_v) / SENSITIVITY_V_PER_MILLITESLA
+            # Format text only on successful calculation
+            mag_display_text = f"{current_mag_mT:+.3f} mT"
+        except ZeroDivisionError:
+            # Indented block for except ZeroDivisionError
+            mag_display_text = "Cal Error?" # Handle division by zero if sensitivity is 0
+            current_mag_mT = None
+        except Exception as e:
+            # Indented block for general except Exception
+            # print(f"Debug: Magnetism calc error: {e}") # Optional debug
+            mag_display_text = "Calc Error"
+            current_mag_mT = None
+
+        # Check calibration status *after* try-except block
+        # Append "(No Cal)" only if calculation didn't fail
+        # This 'if' is indented under 'if avg_voltage is not None:'
+        if IDLE_VOLTAGE == 0 and "Error" not in mag_display_text:
+             mag_display_text += " (No Cal)"
+    # --- End of Corrected Block ---
+
+    current_rp_val_avg=get_averaged_rp_data(NUM_SAMPLES_CALIBRATION)
+    current_rp_val,delta_rp,ldc_display_text = None,None,"N/A"
+    if current_rp_val_avg is not None:
+        current_rp_val=int(current_rp_val_avg)
+        if IDLE_RP_VALUE!=0:
+            delta_rp=current_rp_val-IDLE_RP_VALUE
+            ldc_display_text=f"{current_rp_val} (Delta {delta_rp:+,})" # Use "Delta"
         else: ldc_display_text=f"{current_rp_val} (No Cal)"
     else: ldc_display_text="Read Error"
-    print(f"Sensor readings: Mag={mag_display_text}, LDC={ldc_display_text}")
+    print(f"Sensor readings: Mag={mag_display_text}, LDC={ldc_display_text}") # Uses updated mag_display_text
+
     print("Preprocessing data..."); model_inputs=preprocess_input(img_captured_pil,current_mag_mT,delta_rp)
     if model_inputs is None: messagebox.showerror("AI Error", "Preprocess fail."); lv_classify_button.config(state=tk.NORMAL); return
     print("Running inference..."); output_data=run_inference(model_inputs)
@@ -525,7 +510,7 @@ def capture_and_classify():
     except Exception as e: print(f"Img display error: {e}"); rv_image_label.config(image='', text="Img Error")
     if rv_prediction_label: rv_prediction_label.config(text=f"{predicted_label}")
     if rv_confidence_label: rv_confidence_label.config(text=f"{confidence:.1%}")
-    if rv_magnetism_label: rv_magnetism_label.config(text=mag_display_text)
+    if rv_magnetism_label: rv_magnetism_label.config(text=mag_display_text) # Use updated mag_display_text
     if rv_ldc_label: rv_ldc_label.config(text=ldc_display_text); show_results_view()
 
 def calibrate_sensors():
@@ -592,7 +577,7 @@ def setup_gui():
     global label_font, readout_font, button_font, title_font, result_title_font, result_value_font
 
     # --- Window and Style ---
-    window = tk.Tk(); window.title("AI Metal Classifier v3.0.6"); window.geometry("1000x650")
+    window = tk.Tk(); window.title("AI Metal Classifier v3.0.8"); window.geometry("1000x650") # Updated version
     style = ttk.Style(); style.theme_use('clam' if 'clam' in style.theme_names() else 'default')
     # --- Fonts ---
     title_font=tkFont.Font(family="Helvetica",size=16,weight="bold"); label_font=tkFont.Font(family="Helvetica",size=11); readout_font=tkFont.Font(family="Consolas",size=14,weight="bold"); button_font=tkFont.Font(family="Helvetica",size=11,weight="bold"); result_title_font=tkFont.Font(family="Helvetica",size=12,weight="bold"); result_value_font=tkFont.Font(family="Consolas",size=14,weight="bold")
@@ -613,7 +598,7 @@ def setup_gui():
     lv_calibrate_button = ttk.Button(lv_actions_frame, text="Calibrate Sensors", command=calibrate_sensors); lv_calibrate_button.grid(row=1, column=0, sticky="ew", pady=(5, 5))
 
     # --- Results View Frame Construction ---
-    results_view_frame = ttk.Frame(main_frame, padding="10 10 10 10"); results_view_frame.columnconfigure(0, weight=1)
+    results_view_frame = ttk.Frame(main_frame, padding="10 10 10 10"); results_view_frame.columnconfigure(0, weight=1) # Center content
     rv_content_frame = ttk.Frame(results_view_frame); rv_content_frame.grid(row=0, column=0, sticky="n")
     ttk.Label(rv_content_frame, text="Classification Result", font=title_font).grid(row=0, column=0, columnspan=2, pady=(5, 15))
     try: placeholder_img_tk = ImageTk.PhotoImage(Image.new('RGB', (RESULT_IMG_DISPLAY_WIDTH, int(RESULT_IMG_DISPLAY_WIDTH * 0.75)), '#E0E0E0'))
@@ -628,7 +613,7 @@ def setup_gui():
     rv_classify_another_button = ttk.Button(rv_content_frame, text="<< Classify Another", command=show_live_view); rv_classify_another_button.grid(row=res_row, column=0, columnspan=2, pady=(10, 5)) # Use final res_row
 
     # --- Set Initial State ---
-    clear_results_display(); show_live_view()
+    clear_results_display(); show_live_view() # Init results widgets & show live view first
 
 # ==========================
 # === Main Execution =======
