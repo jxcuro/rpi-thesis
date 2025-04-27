@@ -1858,32 +1858,3 @@ if __name__ == '__main__':
              print("Skipping resource cleanup as hardware initialization was not attempted.")
 
         print("\nApplication finished.")
-```
-
-**Summary of Changes:**
-
-1.  **`capture_and_classify`:**
-    * Added a `DEBUG` print statement right before calling `preprocess_input` to show the exact `current_mag_mT` and `delta_rp` values being used.
-    * Added a `sensor_warning` flag. If any sensor read fails or is uncalibrated (`None` value passed to preprocessing), a warning is printed to the console.
-2.  **`preprocess_input`:**
-    * Added `DEBUG` prints to explicitly state when `mag_mT` or `ldc_rp_delta` is `None` and is being defaulted to `0.0`.
-    * Added `DEBUG` prints to show the `numerical_features` array *before* and *after* scaling by `numerical_scaler.transform()`.
-    * Added a `WARNING` print if the scaled features become all zeros, which is a strong indicator of a problem.
-3.  **`postprocess_output`:**
-    * Modified the debug print to show the raw probabilities alongside their corresponding labels from `loaded_labels`. This makes it much easier to see *why* a certain class is being chosen.
-4.  **`calibrate_sensors`:** Added a confirmation dialog (`askokcancel`) before starting calibration.
-5.  **`on_closing`:** Added a basic window closing handler (`WM_DELETE_WINDOW` protocol) to ask the user for confirmation before quitting and ensure cleanup runs.
-6.  **Minor:** Reduced verbosity of some less critical debug prints (e.g., "Switched to view"). Made button re-enabling dependent on `interpreter` being ready. Improved robustness of `cleanup_resources` slightly.
-
-**How to Use for Debugging:**
-
-1.  **Run the updated script.**
-2.  **Calibrate:** Perform the sensor calibration first (`Calibrate Sensors` button). Check the console output to ensure `IDLE_VOLTAGE` and `IDLE_RP_VALUE` are set to reasonable non-zero values.
-3.  **Classify:** Place a known material (e.g., Aluminum, which should be non-magnetic and affect LDC differently than Steel) and press `Capture & Classify`.
-4.  **Examine Console Output:** Look closely at the `DEBUG` and `WARNING` messages printed during the "Capture & Classify" process:
-    * **`DEBUG Data for Preprocessing:`**: Are the `Magnetism Value (mT)` and `LDC Delta RP` non-zero and different from what you'd expect for an empty reading or for Steel?
-    * **`DEBUG Preprocess: Raw numerical features BEFORE scaling:`**: Does this match the values printed above?
-    * **`DEBUG Preprocess: Scaled numerical features AFTER scaling:`**: Are these values non-zero? Do they change significantly when you test different materials? If they are always `[[0. 0.]]` or very similar, the problem is likely the raw sensor data or the scaler itself.
-    * **`DEBUG Postprocess: Raw Probabilities:`**: Look at the list of probabilities printed with labels. Is the probability for "Steel" always close to 1.0 (100%) and others near 0.0, even if the scaled numerical features look reasonable? If yes, the issue might be more complex (e.g., model expecting different scaling, feature importance issues). If the probabilities *do* change but Steel still wins, the numerical features might still not be distinct enough.
-
-By examining these specific printouts, you should get a much clearer idea of where the data pipeline is going wrong and why "Steel" is always being predict
