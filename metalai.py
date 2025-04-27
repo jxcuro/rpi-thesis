@@ -1,8 +1,8 @@
-# CODE 3.0.3 - AI Metal Classifier GUI with Results Page
+# CODE 3.0.4 - AI Metal Classifier GUI with Results Page
 # Description: Displays live sensor data and camera feed.
 #              Captures image and sensor readings, classifies metal using a TFLite model,
 #              and displays the results on a dedicated page. Includes debug prints.
-# Version: 3.0.3 - Corrected SyntaxError in LDC functions by properly indenting nested try-except.
+# Version: 3.0.4 - Corrected SyntaxError in get_averaged_hall_voltage by properly indenting try-except.
 
 import tkinter as tk
 from tkinter import ttk
@@ -151,7 +151,6 @@ placeholder_img_tk = None
 # =========================
 # === Hardware Setup ===
 # =========================
-# (Identical to previous version)
 def initialize_hardware():
     global camera, i2c, ads, hall_sensor, spi, ldc_initialized
     print("--- Initializing Hardware ---")
@@ -181,7 +180,6 @@ def initialize_hardware():
 # =========================
 # === AI Model Setup ======
 # =========================
-# (Identical to previous version)
 def initialize_ai():
     global interpreter, input_details, output_details, loaded_labels, numerical_scaler
     print("--- Initializing AI Components ---")
@@ -218,8 +216,7 @@ def initialize_ai():
 # =========================
 # === LDC1101 Functions ===
 # =========================
-
-# --- CORRECTED Syntax for LDC Functions ---
+# Includes syntax fix from v3.0.3
 def ldc_write_register(reg_addr, value):
     """Writes a value to an LDC1101 register via SPI."""
     if not spi: return
@@ -228,7 +225,7 @@ def ldc_write_register(reg_addr, value):
         spi.xfer2([reg_addr & 0x7F, value]) # Write command MSB=0
         GPIO.output(CS_PIN, GPIO.HIGH)
     except Exception as e:
-        # --- Properly Indented Error Handling ---
+        # Properly Indented Error Handling
         print(f"Warning: Error during LDC write (Register 0x{reg_addr:02X}), attempting CS HIGH. Error: {e}")
         try:
             GPIO.output(CS_PIN, GPIO.HIGH) # Attempt to ensure CS is high on error
@@ -246,7 +243,7 @@ def ldc_read_register(reg_addr):
         GPIO.output(CS_PIN, GPIO.HIGH)
         return result[1]
     except Exception as e:
-        # --- Properly Indented Error Handling ---
+        # Properly Indented Error Handling
         print(f"Warning: Error during LDC read (Register 0x{reg_addr:02X}), attempting CS HIGH. Error: {e}")
         try:
             GPIO.output(CS_PIN, GPIO.HIGH) # Attempt to ensure CS is high on error
@@ -254,7 +251,6 @@ def ldc_read_register(reg_addr):
             print(f"Warning: Failed to force CS HIGH after read error. Inner error: {inner_e}")
             pass # Ignore error during cleanup attempt
         return 0 # Return 0 on error after attempting cleanup
-# ------------------------------------------
 
 def initialize_ldc1101():
     """Initializes and configures the LDC1101 sensor."""
@@ -290,19 +286,43 @@ def get_ldc_rpdata():
     try:
         msb = ldc_read_register(RP_DATA_MSB_REG)
         lsb = ldc_read_register(RP_DATA_LSB_REG)
+        # Combine MSB and LSB for 16-bit value
         return (msb << 8) | lsb
-    except Exception: return None
+    except Exception: # Catch potential SPI errors during read
+        return None
 
 # ============================
 # === Sensor Reading (Avg) ===
 # ============================
-# (Identical to previous version)
+
+# --- CORRECTED Syntax for get_averaged_hall_voltage ---
 def get_averaged_hall_voltage(num_samples=NUM_SAMPLES_PER_UPDATE):
-    if not hall_sensor: return None; readings = []
-    for _ in range(num_samples): try: readings.append(hall_sensor.voltage) except: return None
+    """Reads the Hall sensor voltage multiple times and returns the average."""
+    if not hall_sensor:
+        return None
+    readings = []
+    for _ in range(num_samples):
+        # --- Start of properly indented block ---
+        try:
+            # Attempt to read the voltage
+            readings.append(hall_sensor.voltage)
+        except Exception as e:
+            # Handle potential errors during a single read
+            # print(f"Warning: Error reading Hall sensor voltage: {e}") # Optional debug
+            # If any read fails, abort the averaging and return None immediately
+            return None
+        # --- End of properly indented block ---
+
+    # If the loop completes without errors, calculate and return the average
     return sum(readings) / len(readings) if readings else None
+# ----------------------------------------------------
+
 def get_averaged_rp_data(num_samples=NUM_SAMPLES_PER_UPDATE):
-    if not ldc_initialized: return None; readings=[get_ldc_rpdata() for _ in range(num_samples)]; valid=[r for r in readings if r is not None]; return sum(valid)/len(valid) if valid else None
+    """Reads the LDC RP data multiple times and returns the average."""
+    if not ldc_initialized: return None
+    readings = [get_ldc_rpdata() for _ in range(num_samples)]
+    valid = [r for r in readings if r is not None] # Filter out None values from failed reads
+    return sum(valid) / len(valid) if valid else None
 
 # ==========================
 # === AI Processing ========
@@ -463,10 +483,10 @@ def update_ldc_reading():
 # ======================
 # === GUI Setup ========
 # ======================
-# (Simplified for brevity, structure identical to previous version)
+# (Structure identical to previous version)
 def setup_gui():
     global window, main_frame, placeholder_img_tk, live_view_frame, results_view_frame, lv_camera_label, lv_magnetism_label, lv_ldc_label, lv_classify_button, lv_calibrate_button, rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, rv_classify_another_button, label_font, readout_font, button_font, title_font, result_title_font, result_value_font
-    window=tk.Tk(); window.title("AI Metal Classifier v3.0.3"); window.geometry("1000x650"); style=ttk.Style(); style.theme_use('clam' if 'clam' in style.theme_names() else 'default')
+    window=tk.Tk(); window.title("AI Metal Classifier v3.0.4"); window.geometry("1000x650"); style=ttk.Style(); style.theme_use('clam' if 'clam' in style.theme_names() else 'default')
     title_font=tkFont.Font(family="Helvetica",size=16,weight="bold"); label_font=tkFont.Font(family="Helvetica",size=11); readout_font=tkFont.Font(family="Consolas",size=14,weight="bold"); button_font=tkFont.Font(family="Helvetica",size=11,weight="bold"); result_title_font=tkFont.Font(family="Helvetica",size=12,weight="bold"); result_value_font=tkFont.Font(family="Consolas",size=14,weight="bold")
     style.configure("TLabel",font=label_font,padding=2); style.configure("TButton",font=button_font,padding=(10,6)); style.configure("TLabelframe",padding=8); style.configure("TLabelframe.Label",font=tkFont.Font(family="Helvetica",size=12,weight="bold")); style.configure("Readout.TLabel",font=readout_font,padding=(5,1)); style.configure("ResultTitle.TLabel",font=label_font,padding=(5,2)); style.configure("ResultValue.TLabel",font=result_value_font,padding=(5,1),anchor=tk.E)
     main_frame=ttk.Frame(window,padding="5 5 5 5"); main_frame.pack(side=tk.TOP,fill=tk.BOTH,expand=True); main_frame.rowconfigure(0,weight=1); main_frame.columnconfigure(0,weight=1)
