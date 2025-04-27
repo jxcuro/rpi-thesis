@@ -1,8 +1,10 @@
-# CODE 3.0.8 - AI Metal Classifier GUI with Results Page
+# CODE 3.0.10 - AI Metal Classifier GUI (DIAGNOSTIC VERSION)
 # Description: Displays live sensor data and camera feed.
 #              Captures image and sensor readings, classifies metal using a TFLite model,
 #              and displays the results on a dedicated page. Includes debug prints.
-# Version: 3.0.8 - Corrected REPEATED SyntaxError in capture_and_classify by properly indenting try-except.
+# Version: 3.0.10 - Radically simplified image display try-except block in capture_and_classify
+#                  SOLELY to diagnose persistent "expected 'except' or 'finally' block" SyntaxError.
+#                  This version WILL NOT display the captured image correctly.
 
 import tkinter as tk
 from tkinter import ttk
@@ -59,284 +61,126 @@ except ImportError:
 # ==================================
 # === Constants and Configuration ===
 # ==================================
-
-# Accuracy/Stability/Speed
-NUM_SAMPLES_PER_UPDATE = 3
-NUM_SAMPLES_CALIBRATION = 10
-GUI_UPDATE_INTERVAL_MS = 100
-CAMERA_UPDATE_INTERVAL_MS = 40 # ms interval for camera feed update
-LDC_DISPLAY_BUFFER_SIZE = 5
-MAGNETISM_FILTER_ALPHA = 0.2 # Smoothing factor for magnetism display
-
-# Camera
-CAMERA_INDEX = 0
-DISPLAY_IMG_WIDTH = 640
-DISPLAY_IMG_HEIGHT = 480
-RESULT_IMG_DISPLAY_WIDTH = 280 # Width for the image shown on the results page
-
-# --- AI Model Configuration ---
+# (Constants remain the same as v3.0.9)
+NUM_SAMPLES_PER_UPDATE = 3; NUM_SAMPLES_CALIBRATION = 10; GUI_UPDATE_INTERVAL_MS = 100
+CAMERA_UPDATE_INTERVAL_MS = 40; LDC_DISPLAY_BUFFER_SIZE = 5; MAGNETISM_FILTER_ALPHA = 0.2
+CAMERA_INDEX = 0; DISPLAY_IMG_WIDTH = 640; DISPLAY_IMG_HEIGHT = 480; RESULT_IMG_DISPLAY_WIDTH = 280
 try: BASE_PATH = os.path.dirname(os.path.abspath(__file__))
-except NameError: BASE_PATH = os.getcwd() # Fallback if __file__ not defined
-MODEL_FILENAME = "material_classifier_model.tflite"
-LABELS_FILENAME = "material_labels.txt"
-SCALER_FILENAME = "numerical_scaler.joblib"
-MODEL_PATH = os.path.join(BASE_PATH, MODEL_FILENAME)
-LABELS_PATH = os.path.join(BASE_PATH, LABELS_FILENAME)
-SCALER_PATH = os.path.join(BASE_PATH, SCALER_FILENAME)
-
-AI_IMG_WIDTH = 224 # Model's expected image width
-AI_IMG_HEIGHT = 224 # Model's expected image height
-
-# Hall Sensor (ADS1115)
-HALL_ADC_CHANNEL = ADS.P0 if I2C_ENABLED else None
-SENSITIVITY_V_PER_TESLA = 0.0004 # V/T - Check your specific sensor datasheet
-SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000
-IDLE_VOLTAGE = 1.7348 # Default idle voltage (V), recalibrated on startup/request
-
-# Inductive Sensor (LDC1101)
-SPI_BUS = 0
-SPI_DEVICE = 0
-SPI_SPEED = 500000 # 500 kHz
-SPI_MODE = 0b00
-CS_PIN = 8 # BCM Pin for Chip Select
-LDC_CHIP_ID = 0xD4 # Expected Chip ID for LDC1101
-# LDC Registers
-START_CONFIG_REG, RP_SET_REG, TC1_REG, TC2_REG, DIG_CONFIG_REG = 0x0B, 0x01, 0x02, 0x03, 0x04
-ALT_CONFIG_REG, D_CONF_REG, INTB_MODE_REG = 0x05, 0x0C, 0x0A
-RP_DATA_MSB_REG, RP_DATA_LSB_REG = 0x22, 0x21
-CHIP_ID_REG = 0x3F
-# LDC Modes
-ACTIVE_CONVERSION_MODE, SLEEP_MODE = 0x00, 0x01
-
-# Calibration
-IDLE_RP_VALUE = 0 # Default idle RP value, recalibrated
+except NameError: BASE_PATH = os.getcwd()
+MODEL_FILENAME = "material_classifier_model.tflite"; LABELS_FILENAME = "material_labels.txt"; SCALER_FILENAME = "numerical_scaler.joblib"
+MODEL_PATH = os.path.join(BASE_PATH, MODEL_FILENAME); LABELS_PATH = os.path.join(BASE_PATH, LABELS_FILENAME); SCALER_PATH = os.path.join(BASE_PATH, SCALER_FILENAME)
+AI_IMG_WIDTH = 224; AI_IMG_HEIGHT = 224
+HALL_ADC_CHANNEL = ADS.P0 if I2C_ENABLED else None; SENSITIVITY_V_PER_TESLA = 0.0004; SENSITIVITY_V_PER_MILLITESLA = SENSITIVITY_V_PER_TESLA * 1000; IDLE_VOLTAGE = 1.7348
+SPI_BUS = 0; SPI_DEVICE = 0; SPI_SPEED = 500000; SPI_MODE = 0b00; CS_PIN = 8; LDC_CHIP_ID = 0xD4
+START_CONFIG_REG, RP_SET_REG, TC1_REG, TC2_REG, DIG_CONFIG_REG = 0x0B, 0x01, 0x02, 0x03, 0x04; ALT_CONFIG_REG, D_CONF_REG, INTB_MODE_REG = 0x05, 0x0C, 0x0A
+RP_DATA_MSB_REG, RP_DATA_LSB_REG = 0x22, 0x21; CHIP_ID_REG = 0x3F; ACTIVE_CONVERSION_MODE, SLEEP_MODE = 0x00, 0x01
+IDLE_RP_VALUE = 0
 
 # Global Hardware Objects
-camera = None
-i2c = None
-ads = None
-hall_sensor = None
-spi = None
-ldc_initialized = False
-
+camera = None; i2c = None; ads = None; hall_sensor = None; spi = None; ldc_initialized = False
 # Global AI Objects
-interpreter = None
-input_details = None
-output_details = None
-loaded_labels = []
-numerical_scaler = None
-
+interpreter = None; input_details = None; output_details = None; loaded_labels = []; numerical_scaler = None
 # Global State
-RP_DISPLAY_BUFFER = deque(maxlen=LDC_DISPLAY_BUFFER_SIZE)
-previous_filtered_mag_mT = None
-
+RP_DISPLAY_BUFFER = deque(maxlen=LDC_DISPLAY_BUFFER_SIZE); previous_filtered_mag_mT = None
 # --- GUI Globals ---
-window = None
-main_frame = None
-live_view_frame = None
-results_view_frame = None
-
+window = None; main_frame = None; live_view_frame = None; results_view_frame = None
 # Fonts
-label_font = None; readout_font = None; button_font = None
-title_font = None; result_title_font = None; result_value_font = None
-
+label_font = None; readout_font = None; button_font = None; title_font = None; result_title_font = None; result_value_font = None
 # Live View Widgets
-lv_camera_label = None
-lv_magnetism_label = None
-lv_ldc_label = None
-lv_classify_button = None
-lv_calibrate_button = None
-
+lv_camera_label = None; lv_magnetism_label = None; lv_ldc_label = None; lv_classify_button = None; lv_calibrate_button = None
 # Results View Widgets
-rv_image_label = None
-rv_prediction_label = None
-rv_confidence_label = None
-rv_magnetism_label = None
-rv_ldc_label = None
-rv_classify_another_button = None
-
+rv_image_label = None; rv_prediction_label = None; rv_confidence_label = None; rv_magnetism_label = None; rv_ldc_label = None; rv_classify_another_button = None
 # Placeholder image object
 placeholder_img_tk = None
 
 # =========================
 # === Hardware Setup ===
 # =========================
+# (Identical to v3.0.9)
 def initialize_hardware():
-    """Initializes Camera, I2C/ADS1115, and SPI/LDC1101."""
-    global camera, i2c, ads, hall_sensor, spi, ldc_initialized
-    print("--- Initializing Hardware ---")
-    # Camera
-    try:
-        camera = cv2.VideoCapture(CAMERA_INDEX)
-        if camera and not camera.isOpened(): raise ValueError("Could not open camera")
-        print(f"Camera {CAMERA_INDEX} opened.")
-    except Exception as e: print(f"Error opening camera {CAMERA_INDEX}: {e}"); camera = None
-    # I2C/ADS1115
+    global camera, i2c, ads, hall_sensor, spi, ldc_initialized; print("--- Initializing Hardware ---")
+    try: camera = cv2.VideoCapture(CAMERA_INDEX); assert camera and camera.isOpened(), "Cam open fail"; print(f"Camera {CAMERA_INDEX} opened.")
+    except Exception as e: print(f"Cam Error: {e}"); camera = None
     if I2C_ENABLED:
-        try:
-            i2c = busio.I2C(board.SCL, board.SDA); ads = ADS.ADS1115(i2c)
-            hall_sensor = AnalogIn(ads, HALL_ADC_CHANNEL); print("ADS1115 Initialized.")
-        except Exception as e: print(f"Error initializing I2C/ADS1115: {e}"); hall_sensor = None
+        try: i2c = busio.I2C(board.SCL, board.SDA); ads = ADS.ADS1115(i2c); hall_sensor = AnalogIn(ads, HALL_ADC_CHANNEL); print("ADS1115 Initialized.")
+        except Exception as e: print(f"I2C Error: {e}"); hall_sensor = None
     else: print("Skipping I2C/ADS1115 setup.")
-    # SPI/LDC1101
     if SPI_ENABLED:
-        try:
-            GPIO.setwarnings(False); GPIO.setmode(GPIO.BCM); GPIO.setup(CS_PIN, GPIO.OUT); GPIO.output(CS_PIN, GPIO.HIGH); print("GPIO Initialized.")
-            spi = spidev.SpiDev(); spi.open(SPI_BUS, SPI_DEVICE); spi.max_speed_hz = SPI_SPEED; spi.mode = SPI_MODE; print(f"SPI Initialized (Bus={SPI_BUS}, Dev={SPI_DEVICE}, Speed={SPI_SPEED}Hz).")
-            if initialize_ldc1101(): enable_ldc_rpmode() # Configure LDC and enable RP mode
-            else: print("LDC1101 Initialization Failed.")
-        except Exception as e: print(f"Error initializing GPIO/SPI: {e}"); spi = None; ldc_initialized = False
+        try: GPIO.setwarnings(False); GPIO.setmode(GPIO.BCM); GPIO.setup(CS_PIN,GPIO.OUT); GPIO.output(CS_PIN,GPIO.HIGH); print("GPIO Initialized."); spi=spidev.SpiDev(); spi.open(SPI_BUS,SPI_DEVICE); spi.max_speed_hz=SPI_SPEED; spi.mode=SPI_MODE; print(f"SPI Initialized (Bus={SPI_BUS}, Dev={SPI_DEVICE}, Speed={SPI_SPEED}Hz).");
+            if not initialize_ldc1101(): print("LDC1101 Init Failed.") # initialize_ldc1101 calls enable_ldc_rpmode if successful
+        except Exception as e: print(f"SPI/GPIO Error: {e}"); spi=None; ldc_initialized=False
     else: print("Skipping SPI/GPIO/LDC1101 setup.")
     print("--- Hardware Initialization Complete ---")
 
 # =========================
 # === AI Model Setup ======
 # =========================
+# (Identical to v3.0.9)
 def initialize_ai():
-    """Loads labels, scaler, TFLite model, and allocates tensors."""
-    global interpreter, input_details, output_details, loaded_labels, numerical_scaler
-    print("--- Initializing AI Components ---")
-    # Load Labels
+    global interpreter, input_details, output_details, loaded_labels, numerical_scaler; print("--- Initializing AI Components ---")
     try:
-        with open(LABELS_PATH, 'r') as f: loaded_labels = [line.strip() for line in f.readlines()]
-        if not loaded_labels: raise ValueError("Labels file is empty.")
-        print(f"Loaded {len(loaded_labels)} labels: {loaded_labels}")
-    except FileNotFoundError: print(f"ERROR: Labels file not found: {LABELS_PATH}"); return False
-    except Exception as e: print(f"ERROR: Reading labels file failed: {e}"); return False
-    # Load Scaler
+        with open(LABELS_PATH,'r') as f: loaded_labels=[line.strip() for line in f.readlines()]; assert loaded_labels, "Labels empty."; print(f"Loaded {len(loaded_labels)} labels: {loaded_labels}")
+    except Exception as e: print(f"ERROR reading labels: {e}"); return False
+    try: numerical_scaler=joblib.load(SCALER_PATH); print(f"Loaded scaler from {SCALER_PATH}"); assert hasattr(numerical_scaler,'transform'), "Scaler lacks 'transform'.";
+    except Exception as e: print(f"ERROR loading scaler: {e}"); return False
     try:
-        numerical_scaler = joblib.load(SCALER_PATH)
-        print(f"Loaded numerical scaler from {SCALER_PATH}")
-        if not hasattr(numerical_scaler, 'transform'): raise TypeError("Scaler lacks 'transform' method.")
-    except FileNotFoundError: print(f"ERROR: Scaler file not found: {SCALER_PATH}"); return False
-    except Exception as e: print(f"ERROR: Loading scaler failed: {e}"); return False
-    # Load TFLite Model
-    try:
-        with warnings.catch_warnings(): # Suppress NumPy subnormal warnings during model load if they occur
-            warnings.filterwarnings("ignore", message="The value of the smallest subnormal.*", category=UserWarning)
-            interpreter = Interpreter(model_path=MODEL_PATH)
-            interpreter.allocate_tensors()
-
-        input_details = interpreter.get_input_details(); output_details = interpreter.get_output_details()
-        print(f"Loaded TFLite model from {MODEL_PATH}")
-        # Check output shape vs labels
-        output_shape = output_details[0]['shape']
-        if output_shape[-1] != len(loaded_labels): print(f"WARNING: Model output size ({output_shape[-1]}) != num labels ({len(loaded_labels)}).")
-    except FileNotFoundError: print(f"ERROR: Model file not found: {MODEL_PATH}"); return False
-    except Exception as e: print(f"ERROR: Loading TFLite model failed: {e}"); import traceback; traceback.print_exc(); return False
-    print("--- AI Initialization Complete ---")
-    return True
+        with warnings.catch_warnings(): warnings.filterwarnings("ignore",message="The value of the smallest subnormal.*",category=UserWarning); interpreter=Interpreter(model_path=MODEL_PATH); interpreter.allocate_tensors();
+        input_details=interpreter.get_input_details(); output_details=interpreter.get_output_details(); print(f"Loaded TFLite model from {MODEL_PATH}")
+        output_shape=output_details[0]['shape'];
+        if output_shape[-1]!=len(loaded_labels): print(f"WARNING: Model output size ({output_shape[-1]})!=labels ({len(loaded_labels)}).")
+    except Exception as e: print(f"ERROR loading TFLite model: {e}"); import traceback; traceback.print_exc(); return False
+    print("--- AI Initialization Complete ---"); return True
 
 # =========================
 # === LDC1101 Functions ===
 # =========================
-# Using corrected indentation from v3.0.3
+# (Identical to v3.0.9 - Corrected)
 def ldc_write_register(reg_addr, value):
-    """Writes a value to an LDC1101 register via SPI."""
     if not spi: return
-    try:
-        GPIO.output(CS_PIN, GPIO.LOW)
-        spi.xfer2([reg_addr & 0x7F, value]) # Write command MSB=0
-        GPIO.output(CS_PIN, GPIO.HIGH)
+    try: GPIO.output(CS_PIN, GPIO.LOW); spi.xfer2([reg_addr & 0x7F, value]); GPIO.output(CS_PIN, GPIO.HIGH)
     except Exception as e:
-        # Properly Indented Error Handling
-        # print(f"Warning: Error during LDC write (Register 0x{reg_addr:02X}), attempting CS HIGH. Error: {e}") # Optional
-        try:
-            GPIO.output(CS_PIN, GPIO.HIGH) # Attempt to ensure CS is high on error
-        except Exception as inner_e:
-            # print(f"Warning: Failed to force CS HIGH after write error. Inner error: {inner_e}") # Optional
-            pass # Ignore error during cleanup attempt
-
+        try: GPIO.output(CS_PIN, GPIO.HIGH)
+        except Exception as inner_e: pass
 def ldc_read_register(reg_addr):
-    """Reads a value from an LDC1101 register via SPI."""
-    if not spi: return 0
-    result = [0, 0]
-    try:
-        GPIO.output(CS_PIN, GPIO.LOW)
-        result = spi.xfer2([reg_addr | 0x80, 0x00]) # Read command MSB=1
-        GPIO.output(CS_PIN, GPIO.HIGH)
-        return result[1]
+    if not spi: return 0; result = [0, 0]
+    try: GPIO.output(CS_PIN, GPIO.LOW); result = spi.xfer2([reg_addr | 0x80, 0x00]); GPIO.output(CS_PIN, GPIO.HIGH); return result[1]
     except Exception as e:
-        # Properly Indented Error Handling
-        # print(f"Warning: Error during LDC read (Register 0x{reg_addr:02X}), attempting CS HIGH. Error: {e}") # Optional
-        try:
-            GPIO.output(CS_PIN, GPIO.HIGH) # Attempt to ensure CS is high on error
-        except Exception as inner_e:
-            # print(f"Warning: Failed to force CS HIGH after read error. Inner error: {inner_e}") # Optional
-            pass # Ignore error during cleanup attempt
-        return 0 # Return 0 on error after attempting cleanup
-
+        try: GPIO.output(CS_PIN, GPIO.HIGH)
+        except Exception as inner_e: pass
+        return 0
 def initialize_ldc1101():
-    """Initializes and configures the LDC1101 sensor."""
     global ldc_initialized; ldc_initialized = False;
     if not spi: return False
-    try:
-        chip_id = ldc_read_register(CHIP_ID_REG)
-        assert chip_id == LDC_CHIP_ID, f"LDC Mismatch: Read 0x{chip_id:02X}, Expected 0x{LDC_CHIP_ID:02X}"
-        print("Configuring LDC1101...")
-        ldc_write_register(RP_SET_REG, 0x07); ldc_write_register(TC1_REG, 0x90)
-        ldc_write_register(TC2_REG, 0xA0); ldc_write_register(DIG_CONFIG_REG, 0x03)
-        ldc_write_register(ALT_CONFIG_REG, 0x00); ldc_write_register(D_CONF_REG, 0x00)
-        ldc_write_register(INTB_MODE_REG, 0x00); ldc_write_register(START_CONFIG_REG, SLEEP_MODE)
-        time.sleep(0.01); print("LDC1101 Configured."); ldc_initialized = True; return True
-    except Exception as e: print(f"LDC Init Exception: {e}"); ldc_initialized = False; return False
-
+    try: chip_id=ldc_read_register(CHIP_ID_REG); assert chip_id==LDC_CHIP_ID, f"LDC Mismatch 0x{chip_id:02X}"; print("Configuring LDC1101..."); ldc_write_register(RP_SET_REG,0x07); ldc_write_register(TC1_REG,0x90); ldc_write_register(TC2_REG,0xA0); ldc_write_register(DIG_CONFIG_REG,0x03); ldc_write_register(ALT_CONFIG_REG,0x00); ldc_write_register(D_CONF_REG,0x00); ldc_write_register(INTB_MODE_REG,0x00); ldc_write_register(START_CONFIG_REG,SLEEP_MODE); time.sleep(0.01); print("LDC1101 Configured."); ldc_initialized=True; enable_ldc_rpmode(); return True # Enable RP mode after successful init
+    except Exception as e: print(f"LDC Init Exception: {e}"); ldc_initialized=False; return False
 def enable_ldc_powermode(mode):
-    """Sets the power mode of the LDC1101."""
-    if not spi or not ldc_initialized: return
-    ldc_write_register(START_CONFIG_REG, mode)
-    time.sleep(0.01)
-
+    if not spi or not ldc_initialized: return; ldc_write_register(START_CONFIG_REG, mode); time.sleep(0.01)
 def enable_ldc_rpmode():
-    """Enables the LDC1101 RP+L measurement mode."""
-    if not spi or not ldc_initialized: print("Cannot enable RP mode"); return
-    ldc_write_register(ALT_CONFIG_REG, 0x00)
-    ldc_write_register(D_CONF_REG, 0x00)
-    enable_ldc_powermode(ACTIVE_CONVERSION_MODE)
-
+    if not spi or not ldc_initialized: print("Cannot enable RP mode"); return; ldc_write_register(ALT_CONFIG_REG,0x00); ldc_write_register(D_CONF_REG,0x00); enable_ldc_powermode(ACTIVE_CONVERSION_MODE)
 def get_ldc_rpdata():
-    """Reads the raw RP+L data from the LDC1101."""
     if not spi or not ldc_initialized: return None
-    try:
-        msb = ldc_read_register(RP_DATA_MSB_REG)
-        lsb = ldc_read_register(RP_DATA_LSB_REG)
-        return (msb << 8) | lsb
+    try: msb=ldc_read_register(RP_DATA_MSB_REG); lsb=ldc_read_register(RP_DATA_LSB_REG); return (msb << 8) | lsb
     except Exception: return None
 
 # ============================
 # === Sensor Reading (Avg) ===
 # ============================
-# Using corrected indentation from v3.0.4
+# (Identical to v3.0.9 - Corrected)
 def get_averaged_hall_voltage(num_samples=NUM_SAMPLES_PER_UPDATE):
-    """Reads the Hall sensor voltage multiple times and returns the average."""
-    if not hall_sensor:
-        return None
+    if not hall_sensor: return None
     readings = []
     for _ in range(num_samples):
-        # --- Start of properly indented block ---
-        try:
-            # Attempt to read the voltage
-            readings.append(hall_sensor.voltage)
-        except Exception as e:
-            # Handle potential errors during a single read
-            # print(f"Warning: Error reading Hall sensor voltage: {e}") # Optional debug
-            # If any read fails, abort the averaging and return None immediately
-            return None
-        # --- End of properly indented block ---
-    # If the loop completes without errors, calculate and return the average
+        try: readings.append(hall_sensor.voltage)
+        except Exception as e: return None
     return sum(readings) / len(readings) if readings else None
-
 def get_averaged_rp_data(num_samples=NUM_SAMPLES_PER_UPDATE):
-    """Reads the LDC RP data multiple times and returns the average."""
     if not ldc_initialized: return None
-    readings = [get_ldc_rpdata() for _ in range(num_samples)]
-    valid = [r for r in readings if r is not None] # Filter out None values
-    return sum(valid) / len(valid) if valid else None
+    readings=[get_ldc_rpdata() for _ in range(num_samples)]; valid=[r for r in readings if r is not None]; return sum(valid)/len(valid) if valid else None
 
 # ==========================
 # === AI Processing ========
 # ==========================
-# Includes debug prints from v3.0.3
+# (Identical to v3.0.9 - Includes debug prints)
 def preprocess_input(image_pil, mag_mT, ldc_rp_delta):
     """Prepares image and sensor data for the TFLite model."""
     global numerical_scaler, input_details
@@ -355,40 +199,19 @@ def preprocess_input(image_pil, mag_mT, ldc_rp_delta):
         elif len(shape)==2 and shape[1]==num_features_expected: numerical_input_index=index
     if image_input_index==-1 or numerical_input_index==-1:
         print("Warning: Could not reliably determine input tensor indices from shape. Trying fallback.")
-        # --- Start of properly indented fallback block ---
         if len(input_details) == 2:
             print("Attempting fallback identification based only on number of dimensions...")
             try:
                 i0_shape, i1_shape = input_details[0]['shape'], input_details[1]['shape']
                 i0_idx, i1_idx = input_details[0]['index'], input_details[1]['index']
-                if len(i0_shape) == 4 and len(i1_shape) == 2:
-                    image_input_index, numerical_input_index = i0_idx, i1_idx
-                    print(f"Fallback: Assumed idx {i0_idx}=image, {i1_idx}=num.")
-                elif len(i0_shape) == 2 and len(i1_shape) == 4:
-                    numerical_input_index, image_input_index = i0_idx, i1_idx
-                    print(f"Fallback: Assumed idx {i0_idx}=num, {i1_idx}=image.")
-                else:
-                    print("Fallback fail: Dim mismatch (not 4D and 2D).")
-                    return None # Exit if fallback assumptions don't match
-            except Exception as e:
-                 print(f"Fallback fail: {e}")
-                 return None
-        else:
-            print("Cannot fallback: Model does not have exactly 2 inputs.")
-            return None
-        # --- End of properly indented fallback block ---
-
-        # Check again if fallback *still* failed or didn't run
-        if image_input_index == -1 or numerical_input_index == -1:
-            print("ERROR: Fallback failed to identify input indices.") # Corrected message
-            return None
-    try:
-        img_dtype=next(d['dtype'] for d in input_details if d['index']==image_input_index)
-        num_dtype=next(d['dtype'] for d in input_details if d['index']==numerical_input_index)
-        model_inputs={image_input_index:image_input.astype(img_dtype),numerical_input_index:scaled_numerical_features.astype(num_dtype)}
-    except Exception as e:
-        print(f"ERROR: Setting input types failed: {e}")
-        return None
+                if len(i0_shape) == 4 and len(i1_shape) == 2: image_input_index, numerical_input_index = i0_idx, i1_idx; print(f"Fallback: Assumed idx {i0_idx}=image, {i1_idx}=num.")
+                elif len(i0_shape) == 2 and len(i1_shape) == 4: numerical_input_index, image_input_index = i0_idx, i1_idx; print(f"Fallback: Assumed idx {i0_idx}=num, {i1_idx}=image.")
+                else: print("Fallback fail: Dim mismatch (not 4D and 2D)."); return None
+            except Exception as e: print(f"Fallback fail: {e}"); return None
+        else: print("Cannot fallback: Model does not have exactly 2 inputs."); return None
+        if image_input_index == -1 or numerical_input_index == -1: print("ERROR: Fallback failed to identify input indices."); return None
+    try: img_dtype=next(d['dtype'] for d in input_details if d['index']==image_input_index); num_dtype=next(d['dtype'] for d in input_details if d['index']==numerical_input_index); model_inputs={image_input_index:image_input.astype(img_dtype),numerical_input_index:scaled_numerical_features.astype(num_dtype)}
+    except Exception as e: print(f"ERROR: Setting input types failed: {e}"); return None
     return model_inputs
 
 def run_inference(model_inputs):
@@ -396,16 +219,9 @@ def run_inference(model_inputs):
     global interpreter, input_details, output_details
     if interpreter is None or model_inputs is None: print("ERROR: Interpreter or input data missing."); return None
     try:
-        for index, data in model_inputs.items():
-            expected_dtype=next(d['dtype'] for d in input_details if d['index']==index)
-            data=data.astype(expected_dtype) if data.dtype!=expected_dtype else data
-            interpreter.set_tensor(index,data)
-        interpreter.invoke()
-        output_data = interpreter.get_tensor(output_details[0]['index'])
-        return output_data
-    except Exception as e:
-        print(f"ERROR: Failed during model inference: {e}")
-        return None
+        for index, data in model_inputs.items(): expected_dtype=next(d['dtype'] for d in input_details if d['index']==index); data=data.astype(expected_dtype) if data.dtype!=expected_dtype else data; interpreter.set_tensor(index,data)
+        interpreter.invoke(); output_data=interpreter.get_tensor(output_details[0]['index']); return output_data
+    except Exception as e: print(f"ERROR: Failed during model inference: {e}"); return None
 
 def postprocess_output(output_data):
     """Interprets the model's output to get prediction and confidence."""
@@ -421,15 +237,13 @@ def postprocess_output(output_data):
 # ==============================
 # === View Switching Logic ===
 # ==============================
+# (Identical to v3.0.9)
 def show_live_view():
-    """Hides results view and shows the live camera/sensor view."""
     global live_view_frame, results_view_frame, lv_classify_button;
     if results_view_frame: results_view_frame.pack_forget()
     if live_view_frame: live_view_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
     if lv_classify_button: lv_classify_button.config(state=tk.NORMAL)
-
 def show_results_view():
-    """Hides live view and shows the classification results view."""
     global live_view_frame, results_view_frame;
     if live_view_frame: live_view_frame.pack_forget()
     if results_view_frame: results_view_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -437,81 +251,88 @@ def show_results_view():
 # ======================
 # === GUI Functions ===
 # ======================
+# (Includes "Delta" fix and corrected try-except from v3.0.9)
 def clear_results_display():
-    """Clears the classification results display widgets to placeholders."""
     global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, placeholder_img_tk;
     if rv_image_label:
         if placeholder_img_tk: rv_image_label.img_tk=placeholder_img_tk; rv_image_label.config(image=placeholder_img_tk,text="")
-        else: rv_image_label.config(image='', text="No Image") # Fallback
+        else: rv_image_label.config(image='', text="No Image")
     if rv_prediction_label: rv_prediction_label.config(text="...")
     if rv_confidence_label: rv_confidence_label.config(text="...")
     if rv_magnetism_label: rv_magnetism_label.config(text="...")
     if rv_ldc_label: rv_ldc_label.config(text="...")
 
 def capture_and_classify():
-    """Captures image and sensor data, runs AI classification, displays results on results page."""
-    global lv_classify_button, window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, interpreter;
+    global lv_classify_button, window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, interpreter, placeholder_img_tk # Added placeholder
     if not interpreter or not camera: messagebox.showerror("Error", "AI/Cam not ready."); return
     lv_classify_button.config(state=tk.DISABLED); window.update_idletasks(); print("Capturing image..."); ret,frame=camera.read()
     if not ret: messagebox.showerror("Capture Error", "Failed capture."); lv_classify_button.config(state=tk.NORMAL); return
     img_captured_pil=Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)); print("Image captured.")
-
-    print("Reading sensors...")
-    avg_voltage=get_averaged_hall_voltage(NUM_SAMPLES_CALIBRATION)
-
-    # --- CORRECTED Block for Magnetism Calculation & Display Text ---
-    current_mag_mT = None # Initialize default
-    mag_display_text = "N/A" # Default display text
-
+    print("Reading sensors..."); avg_voltage=get_averaged_hall_voltage(NUM_SAMPLES_CALIBRATION)
+    # --- Corrected Magnetism Block (v3.0.8) ---
+    current_mag_mT=None; mag_display_text="N/A"
     if avg_voltage is not None:
-        # Voltage reading was successful, proceed with calculation attempt
-        try:
-            # Indented block for the try statement
-            idle_v = IDLE_VOLTAGE if IDLE_VOLTAGE != 0 else avg_voltage
-            current_mag_mT = (avg_voltage - idle_v) / SENSITIVITY_V_PER_MILLITESLA
-            # Format text only on successful calculation
-            mag_display_text = f"{current_mag_mT:+.3f} mT"
-        except ZeroDivisionError:
-            # Indented block for except ZeroDivisionError
-            mag_display_text = "Cal Error?" # Handle division by zero if sensitivity is 0
-            current_mag_mT = None
-        except Exception as e:
-            # Indented block for general except Exception
-            # print(f"Debug: Magnetism calc error: {e}") # Optional debug
-            mag_display_text = "Calc Error"
-            current_mag_mT = None
-
-        # Check calibration status *after* try-except block
-        # Append "(No Cal)" only if calculation didn't fail
-        # This 'if' is indented under 'if avg_voltage is not None:'
-        if IDLE_VOLTAGE == 0 and "Error" not in mag_display_text:
-             mag_display_text += " (No Cal)"
-    # --- End of Corrected Block ---
-
-    current_rp_val_avg=get_averaged_rp_data(NUM_SAMPLES_CALIBRATION)
-    current_rp_val,delta_rp,ldc_display_text = None,None,"N/A"
-    if current_rp_val_avg is not None:
-        current_rp_val=int(current_rp_val_avg)
-        if IDLE_RP_VALUE!=0:
-            delta_rp=current_rp_val-IDLE_RP_VALUE
-            ldc_display_text=f"{current_rp_val} (Delta {delta_rp:+,})" # Use "Delta"
+        try: idle_v=IDLE_VOLTAGE if IDLE_VOLTAGE!=0 else avg_voltage; assert abs(SENSITIVITY_V_PER_MILLITESLA)>1e-9,"Sensitivity is zero"; current_mag_mT=(avg_voltage-idle_v)/SENSITIVITY_V_PER_MILLITESLA; mag_display_text=f"{current_mag_mT:+.3f} mT"
+        except ZeroDivisionError: mag_display_text="Cal Error?"; current_mag_mT=None
+        except Exception: mag_display_text="Calc Error"; current_mag_mT=None
+        if IDLE_VOLTAGE==0 and "Error" not in mag_display_text: mag_display_text+=" (No Cal)"
+    # --- End Corrected Magnetism Block ---
+    current_rp_val_avg=get_averaged_rp_data(NUM_SAMPLES_CALIBRATION); current_rp_val,delta_rp,ldc_display_text=None,None,"N/A"
+    if current_rp_val_avg is not None: current_rp_val=int(current_rp_val_avg);
+        if IDLE_RP_VALUE!=0: delta_rp=current_rp_val-IDLE_RP_VALUE; ldc_display_text=f"{current_rp_val} (Delta {delta_rp:+,})"
         else: ldc_display_text=f"{current_rp_val} (No Cal)"
     else: ldc_display_text="Read Error"
-    print(f"Sensor readings: Mag={mag_display_text}, LDC={ldc_display_text}") # Uses updated mag_display_text
-
+    print(f"Sensor readings: Mag={mag_display_text}, LDC={ldc_display_text}")
     print("Preprocessing data..."); model_inputs=preprocess_input(img_captured_pil,current_mag_mT,delta_rp)
     if model_inputs is None: messagebox.showerror("AI Error", "Preprocess fail."); lv_classify_button.config(state=tk.NORMAL); return
     print("Running inference..."); output_data=run_inference(model_inputs)
     if output_data is None: messagebox.showerror("AI Error", "Inference fail."); lv_classify_button.config(state=tk.NORMAL); return
     predicted_label,confidence=postprocess_output(output_data); print(f"Inference complete: Prediction={predicted_label}, Confidence={confidence:.1%}")
-    print("Updating results display...");
-    try: w,h=img_captured_pil.size; aspect=h/w; img_h=int(RESULT_IMG_DISPLAY_WIDTH*aspect); img_disp=img_captured_pil.resize((RESULT_IMG_DISPLAY_WIDTH,img_h),Image.Resampling.LANCZOS); img_tk=ImageTk.PhotoImage(img_disp);
-        if rv_image_label: rv_image_label.img_tk=img_tk; rv_image_label.config(image=img_tk)
-    except Exception as e: print(f"Img display error: {e}"); rv_image_label.config(image='', text="Img Error")
+
+    # --- Start of SIMPLIFIED results image update block (v3.0.10 DIAGNOSTIC) ---
+    print("Updating results display (DEBUG - Simplified)...")
+    try:
+        # --- Start of Minimal Try Block ---
+        print("    Inside simplified try...")
+        # Just try to configure the label text and keep placeholder image ref
+        if rv_image_label:
+            print("    rv_image_label found. Setting placeholder text.")
+            # Ensure placeholder exists (might fail if Tk isn't fully ready?)
+            if not placeholder_img_tk:
+                 try:
+                     placeholder_img_tk = ImageTk.PhotoImage(Image.new('RGB', (100, 75), '#E0E0E0'))
+                 except Exception as tk_err:
+                     print(f"    Error creating placeholder in capture: {tk_err}")
+                     placeholder_img_tk = None # Ensure it's None if creation fails
+
+            # Use placeholder if available
+            if placeholder_img_tk:
+                 rv_image_label.img_tk = placeholder_img_tk # Keep reference
+                 rv_image_label.config(image=placeholder_img_tk, text="Placeholder - TRY OK")
+            else:
+                 # Fallback if placeholder still not available
+                 rv_image_label.config(image='', text="TRY OK (No Placeholder Image)")
+        else:
+            print("    rv_image_label NOT found (DEBUG).")
+        print("    Exiting simplified try...")
+        # --- End of Minimal Try Block ---
+    except Exception as e:
+        # --- Start of Minimal Except Block ---
+        print(f"    Simplified except block caught error: {e}")
+        if rv_image_label:
+            rv_image_label.config(image='', text="EXCEPT OK") # Indicate except block ran
+        # --- End of Minimal Except Block ---
+    print("    After simplified try-except block.")
+    # --- End of SIMPLIFIED results image update block ---
+
+    # Update text labels (these were not causing syntax errors)
     if rv_prediction_label: rv_prediction_label.config(text=f"{predicted_label}")
     if rv_confidence_label: rv_confidence_label.config(text=f"{confidence:.1%}")
-    if rv_magnetism_label: rv_magnetism_label.config(text=mag_display_text) # Use updated mag_display_text
-    if rv_ldc_label: rv_ldc_label.config(text=ldc_display_text); show_results_view()
+    if rv_magnetism_label: rv_magnetism_label.config(text=mag_display_text)
+    if rv_ldc_label: rv_ldc_label.config(text=ldc_display_text)
+    # Switch view
+    show_results_view()
+
 
 def calibrate_sensors():
     """Calibrates the idle voltage for Hall sensor and idle RP for LDC."""
@@ -543,12 +364,13 @@ def update_magnetism():
     global lv_magnetism_label, window, previous_filtered_mag_mT, IDLE_VOLTAGE; avg_voltage=get_averaged_hall_voltage(); display_text="N/A"
     if hall_sensor:
         if avg_voltage is not None:
-            try: idle_v=IDLE_VOLTAGE if IDLE_VOLTAGE!=0 else avg_voltage; raw_mag_mT=(avg_voltage-idle_v)/SENSITIVITY_V_PER_MILLITESLA
+            try: idle_v=IDLE_VOLTAGE if IDLE_VOLTAGE!=0 else avg_voltage; assert abs(SENSITIVITY_V_PER_MILLITESLA)>1e-9; raw_mag_mT=(avg_voltage-idle_v)/SENSITIVITY_V_PER_MILLITESLA
                 if previous_filtered_mag_mT is None: filtered_mag_mT=raw_mag_mT
                 else: filtered_mag_mT=(MAGNETISM_FILTER_ALPHA*raw_mag_mT)+((1-MAGNETISM_FILTER_ALPHA)*previous_filtered_mag_mT); previous_filtered_mag_mT=filtered_mag_mT
                 unit,value=("mT",filtered_mag_mT) if abs(filtered_mag_mT)>=0.1 else ("µT",filtered_mag_mT*1000); display_text=f"{value:+.2f} {unit}";
                 if IDLE_VOLTAGE==0: display_text+=" (No Cal)"
-            except: display_text="Error"; previous_filtered_mag_mT=None
+            except ZeroDivisionError: display_text="Cal Error?"; previous_filtered_mag_mT=None
+            except Exception: display_text="Error"; previous_filtered_mag_mT=None
         else: display_text="Read Err"; previous_filtered_mag_mT=None
     if lv_magnetism_label: lv_magnetism_label.config(text=display_text)
     if window and window.winfo_exists(): window.after(GUI_UPDATE_INTERVAL_MS,update_magnetism)
@@ -577,7 +399,7 @@ def setup_gui():
     global label_font, readout_font, button_font, title_font, result_title_font, result_value_font
 
     # --- Window and Style ---
-    window = tk.Tk(); window.title("AI Metal Classifier v3.0.8"); window.geometry("1000x650") # Updated version
+    window = tk.Tk(); window.title("AI Metal Classifier v3.0.10 (Diag)"); window.geometry("1000x650") # Updated version
     style = ttk.Style(); style.theme_use('clam' if 'clam' in style.theme_names() else 'default')
     # --- Fonts ---
     title_font=tkFont.Font(family="Helvetica",size=16,weight="bold"); label_font=tkFont.Font(family="Helvetica",size=11); readout_font=tkFont.Font(family="Consolas",size=14,weight="bold"); button_font=tkFont.Font(family="Helvetica",size=11,weight="bold"); result_title_font=tkFont.Font(family="Helvetica",size=12,weight="bold"); result_value_font=tkFont.Font(family="Consolas",size=14,weight="bold")
@@ -601,16 +423,20 @@ def setup_gui():
     results_view_frame = ttk.Frame(main_frame, padding="10 10 10 10"); results_view_frame.columnconfigure(0, weight=1) # Center content
     rv_content_frame = ttk.Frame(results_view_frame); rv_content_frame.grid(row=0, column=0, sticky="n")
     ttk.Label(rv_content_frame, text="Classification Result", font=title_font).grid(row=0, column=0, columnspan=2, pady=(5, 15))
+    # Create placeholder image object safely
     try: placeholder_img_tk = ImageTk.PhotoImage(Image.new('RGB', (RESULT_IMG_DISPLAY_WIDTH, int(RESULT_IMG_DISPLAY_WIDTH * 0.75)), '#E0E0E0'))
-    except Exception as e: placeholder_img_tk = None; print(f"Placeholder creation failed: {e}")
-    rv_image_label = ttk.Label(rv_content_frame, anchor="center", borderwidth=1, relief="sunken", image=placeholder_img_tk); rv_image_label.grid(row=1, column=0, columnspan=2, pady=(0, 15))
+    except Exception as e: placeholder_img_tk = None; print(f"Placeholder creation failed in setup: {e}")
+    rv_image_label = ttk.Label(rv_content_frame, text="Image Placeholder", anchor="center", borderwidth=1, relief="sunken", image=placeholder_img_tk); rv_image_label.grid(row=1, column=0, columnspan=2, pady=(0, 15))
+    if placeholder_img_tk: rv_image_label.img_tk = placeholder_img_tk # Keep initial reference
+    # Details Frame
     rv_details_frame = ttk.Frame(rv_content_frame); rv_details_frame.grid(row=2, column=0, columnspan=2, pady=(0, 15)); rv_details_frame.columnconfigure(1, weight=1); res_row=0
     ttk.Label(rv_details_frame, text="Material:", style="ResultTitle.TLabel").grid(row=res_row, column=0, sticky="w", padx=5); rv_prediction_label = ttk.Label(rv_details_frame, text="...", style="ResultValue.TLabel"); rv_prediction_label.grid(row=res_row, column=1, sticky="ew", padx=5); res_row+=1
     ttk.Label(rv_details_frame, text="Confidence:", style="ResultTitle.TLabel").grid(row=res_row, column=0, sticky="w", padx=5); rv_confidence_label = ttk.Label(rv_details_frame, text="...", style="ResultValue.TLabel"); rv_confidence_label.grid(row=res_row, column=1, sticky="ew", padx=5); res_row+=1
     ttk.Separator(rv_details_frame, orient='horizontal').grid(row=res_row, column=0, columnspan=2, sticky='ew', pady=8); res_row+=1
     ttk.Label(rv_details_frame, text="Magnetism Used:", style="ResultTitle.TLabel").grid(row=res_row, column=0, sticky="w", padx=5); rv_magnetism_label = ttk.Label(rv_details_frame, text="...", style="ResultValue.TLabel"); rv_magnetism_label.grid(row=res_row, column=1, sticky="ew", padx=5); res_row+=1
     ttk.Label(rv_details_frame, text="LDC (Delta) Used:", style="ResultTitle.TLabel").grid(row=res_row, column=0, sticky="w", padx=5); rv_ldc_label = ttk.Label(rv_details_frame, text="...", style="ResultValue.TLabel"); rv_ldc_label.grid(row=res_row, column=1, sticky="ew", padx=5); res_row+=1
-    rv_classify_another_button = ttk.Button(rv_content_frame, text="<< Classify Another", command=show_live_view); rv_classify_another_button.grid(row=res_row, column=0, columnspan=2, pady=(10, 5)) # Use final res_row
+    # Back Button
+    rv_classify_another_button = ttk.Button(rv_content_frame, text="<< Classify Another", command=show_live_view); rv_classify_another_button.grid(row=res_row, column=0, columnspan=2, pady=(10, 5))
 
     # --- Set Initial State ---
     clear_results_display(); show_live_view() # Init results widgets & show live view first
