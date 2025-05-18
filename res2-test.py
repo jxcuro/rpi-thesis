@@ -53,12 +53,19 @@ CS_PIN = 8   # Chip Select pin (example GPIO pin)
 SCK_PIN = 11 # Clock pin (example GPIO pin)
 MISO_PIN = 9 # MISO pin (example GPIO pin)
 MOSI_PIN = 10 # MOSI pin (example GPIO pin)
+PWM_PIN = 12  # GPIO12 / Pin 32
 
 # Initialize the GPIO library
 GPIO.setmode(GPIO.BCM)  # Use Broadcom pin numbering
 
 # Setup the GPIO pins for SPI
 GPIO.setup(CS_PIN, GPIO.OUT)
+
+# Setup PWM pin
+pi = pigpio.pi()
+pi.set_mode(PWM_PIN, pigpio.OUTPUT)
+pi.set_PWM_frequency(PWM_PIN, 16000000)
+pi.set_PWM_dutycycle(PWM_PIN, 128)  # 50% duty cycle (0-255 range for pigpio)
 
 # Device status indicators
 DEVICE_ERROR = 0x01
@@ -180,13 +187,13 @@ def main():
         return
 
     print("LDC1101 initialized. Entering RP mode...")
-    enable_rpmode()
+    enable_lhrmode()
     time.sleep(1)
     display_all_registers()
 
     while True:
-        rp_val = getrpdata()
-        print(f"RP Data: {rp_val}")
+        rp_val = getlhrdata()
+        print(f"LHR Data: {rp_val}")
         time.sleep(0.5)
 
 # Run main
