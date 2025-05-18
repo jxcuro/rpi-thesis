@@ -14,21 +14,6 @@ SPI_DEVICE = 0
 SPI_SPEED = 1000000  # 1 MHz clock speed
 SPI_MODE = 0b00
 
-# LDC1101 register addresses
-RP_SET_REG = 0x01
-TC1_REG = 0x02
-TC2_REG = 0x03
-DIG_CONFIG_REG = 0x04
-ALT_CONFIG_REG = 0x05
-START_CONFIG_REG = 0x0B
-D_CONF_REG = 0x0C
-STATUS_REG = 0x20
-RP_DATA_LSB_REG = 0x21
-RP_DATA_MSB_REG = 0x22
-L_DATA_LSB_REG = 0x23  # L Conversion Result Data Output - bits 7:0
-L_DATA_MSB_REG = 0x24  # L Conversion Result Data Output - bits 15:8
-CHIP_ID_REG = 0x3F
-
 # GPIO settings
 CS_PIN = 8    # Chip Select pin (BCM numbering)
 
@@ -36,29 +21,62 @@ CS_PIN = 8    # Chip Select pin (BCM numbering)
 ACTIVE_CONVERSION_MODE = 0x00
 SLEEP_MODE = 0x01
 
-# Estimated Initial Values (from context)
-ESTIMATED_RP_SET = "0x25"
-ESTIMATED_TC1 = "0x9B"
-ESTIMATED_TC2 = "0xFB"
-ESTIMATED_DIG_CONF = "0xE4" # This (CONV_MODE=11) enables RP+L continuous
+# --- LDC1101 Register Definitions ---
+# NAME: (ADDRESS, DEFAULT_VALUE_HEX_STR, IS_WRITABLE, DESCRIPTION)
+# Note: Default values are typical and might vary or need adjustment.
+# For Read-Only registers, default is what's typically read at reset or during operation.
+LDC1101_REGISTERS = {
+    "RP_SET":           (0x01, "0x07", True, "RP Measurement Dynamic Range"),
+    "TC1":              (0x02, "0x90", True, "Internal Time Constant 1"),
+    "TC2":              (0x03, "0xA0", True, "Internal Time Constant 2"),
+    "DIG_CONFIG":       (0x04, "0xE4", True, "RP+L conversion interval, Power Mode (Using 0xE4 for RP+L)"), # Changed default for RP+L
+    "ALT_CONFIG":       (0x05, "0x00", True, "Additional device settings"),
+    "RP_THRESH_H_LSB":  (0x06, "0x00", True, "RP_THRESHOLD High Setting – LSB"),
+    "RP_THRESH_H_MSB":  (0x07, "0x00", True, "RP_THRESHOLD High Setting – MSB"),
+    "RP_THRESH_L_LSB":  (0x08, "0x00", True, "RP_THRESHOLD Low Setting – LSB"),
+    "RP_THRESH_L_MSB":  (0x09, "0x00", True, "RP_THRESHOLD Low Setting – MSB"),
+    "INTB_MODE":        (0x0A, "0x00", True, "Configure INTB reporting on SDO pin"),
+    "START_CONFIG":     (0x0B, "0x01", True, "Configure Power State (Default Sleep)"),
+    "D_CONF":           (0x0C, "0x00", True, "Sensor Amplitude Control Requirement"),
+    "L_THRESH_HI_LSB":  (0x16, "0x00", True, "L_THRESHOLD High Setting – LSB"),
+    "L_THRESH_HI_MSB":  (0x17, "0x00", True, "L_THRESHOLD High Setting – MSB"),
+    "L_THRESH_LO_LSB":  (0x18, "0x00", True, "L_THRESHOLD Low Setting – LSB"),
+    "L_THRESH_LO_MSB":  (0x19, "0x00", True, "L_THRESHOLD Low Setting – MSB"),
+    "STATUS":           (0x20, "0x00", False, "Report RP+L measurement status"),
+    "RP_DATA_LSB":      (0x21, "0x00", False, "RP Conversion Result Data Output - LSB"),
+    "RP_DATA_MSB":      (0x22, "0x00", False, "RP Conversion Result Data Output - MSB"),
+    "L_DATA_LSB":       (0x23, "0x00", False, "L Conversion Result Data Output - LSB"),
+    "L_DATA_MSB":       (0x24, "0x00", False, "L Conversion Result Data Output - MSB"),
+    "LHR_RCOUNT_LSB":   (0x30, "0x00", True, "High Res L Reference Count – LSB"), # Writable for calibration
+    "LHR_RCOUNT_MSB":   (0x31, "0x00", True, "High Res L Reference Count – MSB"), # Writable for calibration
+    "LHR_OFFSET_LSB":   (0x32, "0x00", True, "High Resolution L Offset – LSB"),
+    "LHR_OFFSET_MSB":   (0x33, "0x00", True, "High Resolution L Offset – MSB"),
+    "LHR_CONFIG":       (0x34, "0x00", True, "High Resolution L Configuration"),
+    "LHR_DATA_LSB":     (0x38, "0x00", False, "High Res L Conversion Result - LSB"),
+    "LHR_DATA_MID":     (0x39, "0x00", False, "High Res L Conversion Result - MID"),
+    "LHR_DATA_MSB":     (0x3A, "0x00", False, "High Res L Conversion Result - MSB"),
+    "LHR_STATUS":       (0x3B, "0x00", False, "High Resolution L Measurement Status"),
+    "RID":              (0x3E, "0x02", False, "Device RID value"), # Typically 0x02 for LDC1101
+    "CHIP_ID":          (0x3F, "0xD4", False, "Device ID value (Expected 0xD4)"),
+}
+
+# Helper to get sorted list of register names by address for consistent GUI layout
+ORDERED_REG_NAMES = sorted(LDC1101_REGISTERS.keys(), key=lambda k: LDC1101_REGISTERS[k][0])
+
 
 # --- LDC1101 Communication Class ---
 class LDC1101_Driver:
     def __init__(self):
         self.spi = None
         self.is_initialized = False
-        self.lock = threading.Lock() # Lock for SPI access
+        self.lock = threading.Lock()
 
     def initialize_spi_gpio(self):
-        """Initializes SPI bus and GPIO."""
         try:
-            # Initialize GPIO
             GPIO.setwarnings(False)
             GPIO.setmode(GPIO.BCM)
             GPIO.setup(CS_PIN, GPIO.OUT)
-            GPIO.output(CS_PIN, GPIO.HIGH) # Deselect device initially
-
-            # Initialize SPI
+            GPIO.output(CS_PIN, GPIO.HIGH)
             self.spi = spidev.SpiDev()
             self.spi.open(SPI_BUS, SPI_DEVICE)
             self.spi.max_speed_hz = SPI_SPEED
@@ -70,122 +88,84 @@ class LDC1101_Driver:
             return False
 
     def _transfer(self, data):
-        """Performs SPI transfer with CS control and delay."""
-        with self.lock: # Ensure only one thread accesses SPI at a time
+        with self.lock:
             GPIO.output(CS_PIN, GPIO.LOW)
-            time.sleep(0.00001) # Short delay after CS low
+            time.sleep(0.00001)
             result = self.spi.xfer2(data)
-            time.sleep(0.00001) # Short delay before CS high
+            time.sleep(0.00001)
             GPIO.output(CS_PIN, GPIO.HIGH)
-            time.sleep(0.0001) # Ensure CS high time (t_IAG)
+            time.sleep(0.0001)
         return result
 
     def write_register(self, reg_addr, value):
-        """Writes a byte value to the specified register."""
         if not self.spi: return False
         try:
             self._transfer([reg_addr & 0x7F, value])
+            # print(f"Wrote 0x{value:02X} to 0x{reg_addr:02X}")
             return True
         except Exception as e:
             print(f"Error writing register 0x{reg_addr:02X}: {e}")
             return False
 
     def read_register(self, reg_addr):
-        """Reads a byte value from the specified register."""
-        if not self.spi: return 0xFF # Indicate error
+        if not self.spi: return 0xFF
         try:
             result = self._transfer([reg_addr | 0x80, 0x00])
+            # print(f"Read 0x{result[1]:02X} from 0x{reg_addr:02X}")
             return result[1]
         except Exception as e:
             print(f"Error reading register 0x{reg_addr:02X}: {e}")
-            return 0xFF # Indicate error
+            return 0xFF
 
     def check_chip_id(self):
-        """Reads and verifies the Chip ID."""
-        chip_id = self.read_register(CHIP_ID_REG)
-        if chip_id == 0xD4:
-            print("Chip ID OK (0xD4)")
+        chip_id_addr = LDC1101_REGISTERS["CHIP_ID"][0]
+        expected_chip_id = int(LDC1101_REGISTERS["CHIP_ID"][1], 16)
+        chip_id = self.read_register(chip_id_addr)
+        if chip_id == expected_chip_id:
+            print(f"Chip ID OK (0x{chip_id:02X})")
             self.is_initialized = True
             return True
         else:
-            messagebox.showerror("Chip ID Error", f"Incorrect Chip ID: 0x{chip_id:02X}. Expected 0xD4.\nCheck wiring and power.")
+            messagebox.showerror("Chip ID Error", f"Incorrect Chip ID: 0x{chip_id:02X}. Expected 0x{expected_chip_id:02X}.\nCheck wiring and power.")
             self.is_initialized = False
             return False
 
-    def configure_device(self, rp_set, tc1, tc2, dig_conf):
-        """Writes the main configuration registers."""
-        if not self.is_initialized:
-            messagebox.showwarning("Not Initialized", "Device not initialized or Chip ID wrong.")
-            return False
-
-        print(f"Writing Config: RP_SET=0x{rp_set:02X}, TC1=0x{tc1:02X}, TC2=0x{tc2:02X}, DIG_CONF=0x{dig_conf:02X}")
-
-        # Go to sleep mode to configure
-        if not self.write_register(START_CONFIG_REG, SLEEP_MODE): return False
-        time.sleep(0.01)
-
-        # Write the registers
-        success = True
-        success &= self.write_register(RP_SET_REG, rp_set)
-        success &= self.write_register(TC1_REG, tc1)
-        success &= self.write_register(TC2_REG, tc2)
-        success &= self.write_register(DIG_CONFIG_REG, dig_conf)
-        # Ensure other necessary defaults for RP+L mode
-        success &= self.write_register(ALT_CONFIG_REG, 0x00) # Ensure L-measurement path enabled if DIG_CONF allows
-        success &= self.write_register(D_CONF_REG, 0x00)
-
-        if not success:
-            messagebox.showerror("Write Error", "Failed to write one or more configuration registers.")
-            return False
-
-        print("Configuration written.")
-        return True
-
     def set_active_mode(self, active=True):
-        """Sets the device to Active or Sleep mode."""
         if not self.is_initialized: return False
         mode = ACTIVE_CONVERSION_MODE if active else SLEEP_MODE
-        print(f"Setting mode to {'Active' if active else 'Sleep'}...")
-        if not self.write_register(START_CONFIG_REG, mode):
+        start_config_addr = LDC1101_REGISTERS["START_CONFIG"][0]
+        print(f"Setting mode to {'Active' if active else 'Sleep'} (Reg 0x{start_config_addr:02X} = 0x{mode:02X})...")
+        if not self.write_register(start_config_addr, mode):
             messagebox.showerror("Mode Error", f"Failed to set {'Active' if active else 'Sleep'} mode.")
             return False
-        time.sleep(0.01) # Allow mode transition
+        time.sleep(0.01)
         return True
 
     def get_rp_data(self):
-        """Reads the 16-bit RP data correctly."""
-        if not self.is_initialized: return -1 # Error indicator
-        # IMPORTANT: Read LSB (0x21) before MSB (0x22)
-        lsb = self.read_register(RP_DATA_LSB_REG)
-        if lsb == 0xFF: return -1 # Check for read error
-        msb = self.read_register(RP_DATA_MSB_REG)
-        if msb == 0xFF: return -1 # Check for read error
-        value = (msb << 8) | lsb
-        return value
+        if not self.is_initialized: return -1
+        lsb = self.read_register(LDC1101_REGISTERS["RP_DATA_LSB"][0])
+        if lsb == 0xFF: return -1
+        msb = self.read_register(LDC1101_REGISTERS["RP_DATA_MSB"][0])
+        if msb == 0xFF: return -1
+        return (msb << 8) | lsb
 
     def get_l_data(self):
-        """Reads the 16-bit L data correctly."""
-        if not self.is_initialized: return -1 # Error indicator
-        # IMPORTANT: Read LSB (0x23) before MSB (0x24)
-        lsb = self.read_register(L_DATA_LSB_REG)
-        if lsb == 0xFF: return -1 # Check for read error
-        msb = self.read_register(L_DATA_MSB_REG)
-        if msb == 0xFF: return -1 # Check for read error
-        value = (msb << 8) | lsb
-        return value
+        if not self.is_initialized: return -1
+        lsb = self.read_register(LDC1101_REGISTERS["L_DATA_LSB"][0])
+        if lsb == 0xFF: return -1
+        msb = self.read_register(LDC1101_REGISTERS["L_DATA_MSB"][0])
+        if msb == 0xFF: return -1
+        return (msb << 8) | lsb
 
     def get_status(self):
-        """Reads the STATUS register."""
-        if not self.is_initialized: return 0xFF # Error indicator
-        return self.read_register(STATUS_REG)
+        if not self.is_initialized: return 0xFF
+        return self.read_register(LDC1101_REGISTERS["STATUS"][0])
 
     def cleanup(self):
-        """Cleans up SPI and GPIO resources."""
         print("Cleaning up...")
         if self.spi:
             try:
-                # Try to put device to sleep before closing
-                if self.is_initialized : self.set_active_mode(False) # Check if initialized before setting mode
+                if self.is_initialized: self.set_active_mode(False)
             except Exception as e:
                 print(f"Could not set sleep mode during cleanup: {e}")
             try:
@@ -195,147 +175,213 @@ class LDC1101_Driver:
             except Exception as e:
                 print(f"Error closing SPI: {e}")
         try:
-            GPIO.cleanup()
+            GPIO.cleanup() # This might error if GPIO was not setup by this script (e.g. another script did it)
             print("GPIO cleaned up.")
         except Exception as e:
-            # Might happen if cleanup already occurred
-            print(f"Error cleaning up GPIO: {e}")
+            print(f"Error cleaning up GPIO (this might be normal if already cleaned): {e}")
+
+
+# --- Scrollable Frame Class (Helper) ---
+class ScrollableFrame(ttk.Frame):
+    def __init__(self, container, *args, **kwargs):
+        super().__init__(container, *args, **kwargs)
+        canvas = tk.Canvas(self)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self.scrollable_frame = ttk.Frame(canvas)
+
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            )
+        )
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
 
 # --- GUI Application Class ---
 class LdcTunerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("LDC1101 RP & L Tuner")
-        # self.root.geometry("400x400") # Adjust size as needed
+        self.root.title("LDC1101 Universal Register Tuner")
+        # self.root.geometry("650x700") # Adjust size as needed
 
         self.ldc = LDC1101_Driver()
-        self.data_queue = queue.Queue() # Queue for RP/L/Status data from thread
+        self.data_queue = queue.Queue()
         self.reading_thread = None
-        self.is_reading = threading.Event() # Event to signal thread to stop
+        self.is_reading = threading.Event()
 
-        # Initialize hardware
+        self.register_vars = {} # Stores StringVars for register entry fields {addr: tk.StringVar}
+        self.register_entries = {} # Stores Entry widgets {addr: ttk.Entry}
+
         if not self.ldc.initialize_spi_gpio():
-            # Error already shown by the method
             self.root.destroy()
             return
         if not self.ldc.check_chip_id():
-            # Error already shown
             self.root.destroy()
             return
 
-        # --- GUI Elements ---
-        main_frame = ttk.Frame(root, padding="10")
+        self._create_gui_elements()
+        self.populate_default_register_values()
+
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.update_gui_from_queue() # Start queue polling
+
+    def _create_gui_elements(self):
+        main_frame = ttk.Frame(self.root, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
 
-        # Register Configuration Frame
-        config_frame = ttk.LabelFrame(main_frame, text="Configuration Registers (Hex)", padding="10")
-        config_frame.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        # --- Register Configuration Frame (Scrollable) ---
+        reg_outer_frame = ttk.LabelFrame(main_frame, text="Device Registers", padding="10")
+        reg_outer_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        main_frame.rowconfigure(0, weight=1) # Allow register frame to expand
 
-        ttk.Label(config_frame, text="RP_SET (0x01):").grid(row=0, column=0, sticky=tk.W, padx=5)
-        self.rp_set_var = tk.StringVar(value=ESTIMATED_RP_SET)
-        self.rp_set_entry = ttk.Entry(config_frame, textvariable=self.rp_set_var, width=8)
-        self.rp_set_entry.grid(row=0, column=1, padx=5)
+        scrollable_reg_frame = ScrollableFrame(reg_outer_frame)
+        scrollable_reg_frame.pack(fill="both", expand=True)
+        
+        # Inside the scrollable_frame.scrollable_frame, create the grid
+        current_row = 0
+        ttk.Label(scrollable_reg_frame.scrollable_frame, text="Name (Addr)", font=('TkDefaultFont', 9, 'bold')).grid(row=current_row, column=0, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(scrollable_reg_frame.scrollable_frame, text="Value (Hex)", font=('TkDefaultFont', 9, 'bold')).grid(row=current_row, column=1, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(scrollable_reg_frame.scrollable_frame, text="Description", font=('TkDefaultFont', 9, 'bold')).grid(row=current_row, column=2, sticky=tk.W, padx=5, pady=2)
+        current_row += 1
 
-        ttk.Label(config_frame, text="TC1 (0x02):").grid(row=1, column=0, sticky=tk.W, padx=5)
-        self.tc1_var = tk.StringVar(value=ESTIMATED_TC1)
-        self.tc1_entry = ttk.Entry(config_frame, textvariable=self.tc1_var, width=8)
-        self.tc1_entry.grid(row=1, column=1, padx=5)
+        for reg_name in ORDERED_REG_NAMES:
+            addr, default_val, is_writable, desc = LDC1101_REGISTERS[reg_name]
+            
+            label_text = f"{reg_name} (0x{addr:02X})"
+            ttk.Label(scrollable_reg_frame.scrollable_frame, text=label_text).grid(row=current_row, column=0, sticky=tk.W, padx=5, pady=2)
 
-        ttk.Label(config_frame, text="TC2 (0x03):").grid(row=0, column=2, sticky=tk.W, padx=5)
-        self.tc2_var = tk.StringVar(value=ESTIMATED_TC2)
-        self.tc2_entry = ttk.Entry(config_frame, textvariable=self.tc2_var, width=8)
-        self.tc2_entry.grid(row=0, column=3, padx=5)
+            var = tk.StringVar(value=default_val)
+            self.register_vars[addr] = var
+            
+            entry_state = tk.NORMAL if is_writable else tk.DISABLED
+            entry = ttk.Entry(scrollable_reg_frame.scrollable_frame, textvariable=var, width=10, state=entry_state)
+            entry.grid(row=current_row, column=1, padx=5, pady=2)
+            self.register_entries[addr] = entry
 
-        ttk.Label(config_frame, text="DIG_CONF (0x04):").grid(row=1, column=2, sticky=tk.W, padx=5)
-        self.dig_conf_var = tk.StringVar(value=ESTIMATED_DIG_CONF)
-        self.dig_conf_entry = ttk.Entry(config_frame, textvariable=self.dig_conf_var, width=8)
-        self.dig_conf_entry.grid(row=1, column=3, padx=5)
-
+            ttk.Label(scrollable_reg_frame.scrollable_frame, text=desc, wraplength=250).grid(row=current_row, column=2, sticky=tk.W, padx=5, pady=2)
+            current_row += 1
+        
         # Register Action Buttons
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.grid(row=1, column=0, columnspan=3, pady=5)
-        self.write_btn = ttk.Button(btn_frame, text="Write Registers", command=self.write_config)
-        self.write_btn.pack(side=tk.LEFT, padx=5)
-        self.read_btn = ttk.Button(btn_frame, text="Read Registers", command=self.read_config)
-        self.read_btn.pack(side=tk.LEFT, padx=5)
+        reg_btn_frame = ttk.Frame(main_frame)
+        reg_btn_frame.grid(row=1, column=0, columnspan=2, pady=5, sticky=tk.EW)
+        
+        self.write_all_btn = ttk.Button(reg_btn_frame, text="Write All Writable Registers", command=self.write_registers_from_gui)
+        self.write_all_btn.pack(side=tk.LEFT, padx=5)
+        self.read_all_btn = ttk.Button(reg_btn_frame, text="Read All Registers", command=self.read_registers_to_gui)
+        self.read_all_btn.pack(side=tk.LEFT, padx=5)
 
-        # Measurement Display Frame
+        # --- Live Measurement Display Frame ---
         measure_frame = ttk.LabelFrame(main_frame, text="Live Measurements", padding="10")
-        measure_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        measure_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=5)
 
         ttk.Label(measure_frame, text="RP Data:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
         self.rp_data_var = tk.StringVar(value="---")
-        self.rp_data_label = ttk.Label(measure_frame, textvariable=self.rp_data_var, font=("Consolas", 12), width=8, anchor=tk.E)
-        self.rp_data_label.grid(row=0, column=1, sticky=tk.E, padx=5, pady=2)
+        ttk.Label(measure_frame, textvariable=self.rp_data_var, font=("Consolas", 12), width=10, anchor=tk.E).grid(row=0, column=1, sticky=tk.E, padx=5, pady=2)
 
         ttk.Label(measure_frame, text="L Data:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
         self.l_data_var = tk.StringVar(value="---")
-        self.l_data_label = ttk.Label(measure_frame, textvariable=self.l_data_var, font=("Consolas", 12), width=8, anchor=tk.E)
-        self.l_data_label.grid(row=1, column=1, sticky=tk.E, padx=5, pady=2)
+        ttk.Label(measure_frame, textvariable=self.l_data_var, font=("Consolas", 12), width=10, anchor=tk.E).grid(row=1, column=1, sticky=tk.E, padx=5, pady=2)
 
         ttk.Label(measure_frame, text="Status (0x20):").grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
         self.status_var = tk.StringVar(value="0x--")
-        self.status_label = ttk.Label(measure_frame, textvariable=self.status_var, font=("Consolas", 12), width=8, anchor=tk.E)
-        self.status_label.grid(row=2, column=1, sticky=tk.E, padx=5, pady=2)
+        ttk.Label(measure_frame, textvariable=self.status_var, font=("Consolas", 12), width=10, anchor=tk.E).grid(row=2, column=1, sticky=tk.E, padx=5, pady=2)
 
-        # Start/Stop Buttons
-        control_frame = ttk.Frame(main_frame)
-        control_frame.grid(row=3, column=0, columnspan=3, pady=10)
-        self.start_btn = ttk.Button(control_frame, text="Start Reading", command=self.start_reading)
-        self.start_btn.pack(side=tk.LEFT, padx=5)
-        self.stop_btn = ttk.Button(control_frame, text="Stop Reading", command=self.stop_reading, state=tk.DISABLED)
-        self.stop_btn.pack(side=tk.LEFT, padx=5)
+        # --- Start/Stop Live Reading Buttons ---
+        live_control_frame = ttk.Frame(main_frame)
+        live_control_frame.grid(row=2, column=1, sticky=(tk.W, tk.E, tk.S, tk.N), pady=5, padx=10) # Place next to live data
+        
+        self.start_live_btn = ttk.Button(live_control_frame, text="Start Live Reading", command=self.start_live_reading)
+        self.start_live_btn.pack(side=tk.TOP, padx=5, pady=5, fill=tk.X)
+        self.stop_live_btn = ttk.Button(live_control_frame, text="Stop Live Reading", command=self.stop_live_reading, state=tk.DISABLED)
+        self.stop_live_btn.pack(side=tk.TOP, padx=5, pady=5, fill=tk.X)
 
         # Status Bar
         self.status_bar_var = tk.StringVar(value="Initialized. Ready.")
         status_bar = ttk.Label(main_frame, textvariable=self.status_bar_var, relief=tk.SUNKEN, anchor=tk.W)
-        status_bar.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(5,0))
+        status_bar.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(5,0))
 
-        # Set protocol for window close
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+    def populate_default_register_values(self):
+        """Populates GUI fields with default values from LDC1101_REGISTERS."""
+        for reg_name in ORDERED_REG_NAMES:
+            addr, default_val, _, _ = LDC1101_REGISTERS[reg_name]
+            if addr in self.register_vars:
+                self.register_vars[addr].set(default_val)
+        self.status_bar_var.set("Default register values loaded into GUI.")
 
-        # Start the update loop for the GUI
-        self.update_gui()
 
     def parse_hex_input(self, hex_string):
-        """Tries to parse hex input (0x...), returns integer or None."""
         try:
             return int(hex_string, 16)
         except ValueError:
             return None
 
-    def write_config(self):
-        """Reads values from entry fields and writes to LDC1101."""
-        self.status_bar_var.set("Writing configuration...")
+    def write_registers_from_gui(self):
+        self.status_bar_var.set("Writing registers from GUI...")
         self.root.update_idletasks()
-
-        rp_set = self.parse_hex_input(self.rp_set_var.get())
-        tc1 = self.parse_hex_input(self.tc1_var.get())
-        tc2 = self.parse_hex_input(self.tc2_var.get())
-        dig_conf = self.parse_hex_input(self.dig_conf_var.get())
-
-        if None in [rp_set, tc1, tc2, dig_conf]:
-            messagebox.showerror("Input Error", "Invalid hex value entered. Use '0x' prefix (e.g., 0x25).")
-            self.status_bar_var.set("Write failed: Invalid input.")
-            return
 
         was_reading = self.is_reading.is_set()
         if was_reading:
-            self.stop_reading() # Stop reading before writing config
+            self.stop_live_reading()
             time.sleep(0.1) # Give thread time to stop
 
-        if self.ldc.configure_device(rp_set, tc1, tc2, dig_conf):
-            self.status_bar_var.set("Configuration written successfully.")
-            # Optionally restart reading if it was running before
-            if was_reading:
-                self.start_reading()
+        if not self.ldc.set_active_mode(False): # Go to sleep for configuration
+            self.status_bar_var.set("Write failed: Could not set Sleep mode.")
+            if was_reading: self.start_live_reading() # Try to restore state
+            return
+        
+        success_count = 0
+        fail_count = 0
+        first_fail_addr = None
+
+        for reg_name in ORDERED_REG_NAMES:
+            addr, _, is_writable, _ = LDC1101_REGISTERS[reg_name]
+            if is_writable and addr in self.register_vars:
+                val_str = self.register_vars[addr].get()
+                val_int = self.parse_hex_input(val_str)
+                if val_int is not None and 0x00 <= val_int <= 0xFF:
+                    if self.ldc.write_register(addr, val_int):
+                        success_count += 1
+                    else:
+                        fail_count += 1
+                        if first_fail_addr is None: first_fail_addr = addr
+                        print(f"Failed to write 0x{val_int:02X} to register 0x{addr:02X}")
+                elif val_int is None: # Invalid hex
+                    fail_count +=1
+                    if first_fail_addr is None: first_fail_addr = addr
+                    messagebox.showwarning("Input Error", f"Invalid hex value '{val_str}' for register {reg_name} (0x{addr:02X}). Write skipped for this register.")
+                else: # Out of byte range
+                    fail_count += 1
+                    if first_fail_addr is None: first_fail_addr = addr
+                    messagebox.showwarning("Input Error", f"Value 0x{val_int:02X} out of range (0x00-0xFF) for {reg_name} (0x{addr:02X}). Write skipped.")
+
+
+        if fail_count > 0:
+            self.status_bar_var.set(f"Wrote {success_count} regs. Failed for {fail_count} (first at 0x{first_fail_addr:02X}).")
+            messagebox.showerror("Write Error", f"Failed to write {fail_count} register(s). Check console/input. First failure at 0x{first_fail_addr:02X if first_fail_addr else '--'}.")
         else:
-            self.status_bar_var.set("Write failed: SPI error.")
+            self.status_bar_var.set(f"All {success_count} writable registers from GUI written successfully.")
+        
+        # Optionally, put device back to active if it was, or leave it to user
+        # For now, we leave it in sleep after a full write. User can use "Start Live Reading"
+        # which will set it to active mode. Or we can restore previous state:
+        if was_reading:
+             self.start_live_reading()
+        # else: # if not was_reading, ensure START_CONFIG is what user set in GUI
+        #     start_cfg_addr = LDC1101_REGISTERS["START_CONFIG"][0]
+        #     start_cfg_val_str = self.register_vars[start_cfg_addr].get()
+        #     start_cfg_val_int = self.parse_hex_input(start_cfg_val_str)
+        #     if start_cfg_val_int is not None:
+        #         self.ldc.write_register(start_cfg_addr, start_cfg_val_int) # re-apply start_config
+        #         time.sleep(0.01)
 
-
-    def read_config(self):
-        """Reads current config from LDC1101 and updates entry fields."""
-        self.status_bar_var.set("Reading configuration...")
+    def read_registers_to_gui(self):
+        self.status_bar_var.set("Reading all registers to GUI...")
         self.root.update_idletasks()
 
         if not self.ldc.is_initialized:
@@ -345,161 +391,170 @@ class LdcTunerApp:
 
         was_reading = self.is_reading.is_set()
         if was_reading:
-            self.stop_reading() # Stop reading before reading config
+            self.stop_live_reading()
             time.sleep(0.1)
 
-        # Put device in sleep to ensure stable read (optional but safe)
-        self.ldc.set_active_mode(False)
+        # It's generally safer to read registers in sleep mode, though many can be read active
+        original_mode_active = False
+        current_start_config_val = self.ldc.read_register(LDC1101_REGISTERS["START_CONFIG"][0])
+        if current_start_config_val == ACTIVE_CONVERSION_MODE:
+            original_mode_active = True
+            self.ldc.set_active_mode(False) # Go to sleep
 
-        rp_set = self.ldc.read_register(RP_SET_REG)
-        tc1 = self.ldc.read_register(TC1_REG)
-        tc2 = self.ldc.read_register(TC2_REG)
-        dig_conf = self.ldc.read_register(DIG_CONFIG_REG)
-
-        if 0xFF in [rp_set, tc1, tc2, dig_conf]:
-            messagebox.showerror("Read Error", "Failed to read one or more registers.")
-            self.status_bar_var.set("Read failed: SPI error.")
+        read_success_count = 0
+        read_fail_count = 0
+        for reg_name in ORDERED_REG_NAMES:
+            addr, _, _, _ = LDC1101_REGISTERS[reg_name]
+            if addr in self.register_vars:
+                val = self.ldc.read_register(addr)
+                if val != 0xFF: # 0xFF often indicates read error in driver
+                    self.register_vars[addr].set(f"0x{val:02X}")
+                    read_success_count += 1
+                else:
+                    self.register_vars[addr].set("ERR")
+                    read_fail_count +=1
+                    print(f"Failed to read register 0x{addr:02X} ({reg_name})")
+        
+        if read_fail_count > 0:
+            self.status_bar_var.set(f"Read {read_success_count} regs. Failed for {read_fail_count}.")
+            messagebox.showwarning("Read Error", f"Failed to read {read_fail_count} register(s). Check console.")
         else:
-            self.rp_set_var.set(f"0x{rp_set:02X}")
-            self.tc1_var.set(f"0x{tc1:02X}")
-            self.tc2_var.set(f"0x{tc2:02X}")
-            self.dig_conf_var.set(f"0x{dig_conf:02X}")
-            self.status_bar_var.set("Configuration read successfully.")
+            self.status_bar_var.set("All registers read to GUI successfully.")
 
-        # Restore previous mode if needed
-        if was_reading:
-            self.start_reading()
-        else:
-            # Leave in sleep or set active if preferred after read
-            # self.ldc.set_active_mode(True)
-            pass
+        if original_mode_active: # If it was active before reading all registers
+             self.ldc.set_active_mode(True) # Restore active mode
+
+        if was_reading: # If live reading was active, restart it
+            self.start_live_reading()
 
 
-    def start_reading(self):
-        """Starts the background thread for continuous reading."""
+    def start_live_reading(self):
         if self.reading_thread and self.reading_thread.is_alive():
-            print("Reading thread already running.")
+            print("Live reading thread already running.")
             return
 
+        # Set device to active mode for measurements
+        # The DIG_CONFIG register should be set for RP+L continuous.
+        # We assume it's already configured via "Write All Writable Registers"
+        # or user knows what they are doing with DIG_CONFIG.
+        # Default DIG_CONFIG is 0xE4 for RP+L.
+        dig_conf_val_str = self.register_vars[LDC1101_REGISTERS["DIG_CONFIG"][0]].get()
+        dig_conf_val = self.parse_hex_input(dig_conf_val_str)
+        if dig_conf_val is None or (dig_conf_val >> 6) == 0b00: # Power Mode bits are 7:6. 00 = sleep
+             messagebox.showwarning("Config Warning",
+                                   f"DIG_CONFIG (0x04) is currently '{dig_conf_val_str}', which might indicate Sleep Mode or invalid. "
+                                   f"Ensure it's set for active measurement (e.g., 0xE4 for RP+L continuous).")
+             # We will still attempt to set START_CONFIG to active.
+        
         if not self.ldc.set_active_mode(True):
-            self.status_bar_var.set("Failed to start: Could not set Active mode.")
+            self.status_bar_var.set("Failed to start live reading: Could not set Active mode.")
             return
 
-        self.is_reading.set() # Signal thread to run
-        self.reading_thread = threading.Thread(target=self.read_data_loop, daemon=True)
+        self.is_reading.set()
+        self.reading_thread = threading.Thread(target=self.live_read_data_loop, daemon=True)
         self.reading_thread.start()
 
-        self.start_btn.config(state=tk.DISABLED)
-        self.stop_btn.config(state=tk.NORMAL)
-        self.write_btn.config(state=tk.DISABLED) # Disable writing while reading
-        self.read_btn.config(state=tk.DISABLED)
-        self.status_bar_var.set("Reading started...")
+        self.start_live_btn.config(state=tk.DISABLED)
+        self.stop_live_btn.config(state=tk.NORMAL)
+        self.write_all_btn.config(state=tk.DISABLED) # Disable writing all registers while live reading
+        self.read_all_btn.config(state=tk.DISABLED)
+        self.status_bar_var.set("Live reading started...")
 
-    def stop_reading(self):
-        """Stops the background reading thread."""
-        self.is_reading.clear() # Signal thread to stop
+    def stop_live_reading(self):
+        self.is_reading.clear()
         if self.reading_thread and self.reading_thread.is_alive():
-            print("Waiting for reading thread to stop...")
-            # Give a bit more time for the thread to join if it's in a sleep
+            print("Waiting for live reading thread to stop...")
             self.reading_thread.join(timeout=0.2)
             if self.reading_thread.is_alive():
-                print("Warning: Reading thread did not stop gracefully.")
+                print("Warning: Live reading thread did not stop gracefully.")
+        
+        # Set device to sleep mode (using START_CONFIG) when stopping live read
+        self.ldc.set_active_mode(False) 
 
-        self.ldc.set_active_mode(False) # Put device back to sleep
+        self.start_live_btn.config(state=tk.NORMAL)
+        self.stop_live_btn.config(state=tk.DISABLED)
+        self.write_all_btn.config(state=tk.NORMAL)
+        self.read_all_btn.config(state=tk.NORMAL)
+        self.status_bar_var.set("Live reading stopped.")
 
-        self.start_btn.config(state=tk.NORMAL)
-        self.stop_btn.config(state=tk.DISABLED)
-        self.write_btn.config(state=tk.NORMAL)
-        self.read_btn.config(state=tk.NORMAL)
-        self.status_bar_var.set("Reading stopped.")
-        # Clear display when stopped (optional)
-        # self.rp_data_var.set("---")
-        # self.l_data_var.set("---")
-        # self.status_var.set("0x--")
-
-    def read_data_loop(self):
-        """Background loop to read data and put it in the queue."""
-        print("Reading thread started.")
+    def live_read_data_loop(self):
+        print("Live reading thread started.")
         while self.is_reading.is_set():
             status = self.ldc.get_status()
             rp_data = self.ldc.get_rp_data()
             l_data = self.ldc.get_l_data()
 
-            # Check for errors from read functions
             if status == 0xFF or rp_data == -1 or l_data == -1:
-                print("Read error in loop, stopping.")
-                self.data_queue.put(("Error", "Error", "Error")) # Signal error for all values
-                self.is_reading.clear() # Signal stop
-                break # Exit thread loop on error
-
-            # Put valid data into the queue for the GUI thread
+                print("Read error in live loop, stopping.")
+                self.data_queue.put(("Error", "Error", "Error"))
+                self.is_reading.clear() 
+                break 
+            
             self.data_queue.put((rp_data, l_data, status))
 
-            # Check status register for device errors
             if status & 0b10000000: # NO_SENSOR_OSC
                 print("!!! WARNING: Sensor Oscillation Error detected (STATUS bit 7 = 1) !!!")
-            # Add other status bit checks if needed (e.g., DRDY_L, DRDY_RP)
+            
+            time.sleep(0.05) # ~20 Hz
 
-            time.sleep(0.05) # ~20 Hz read rate - adjust as needed
+        print("Live reading thread finished.")
 
-        print("Reading thread finished.")
-
-    def update_gui(self):
-        """Periodically checks the queue and updates GUI labels."""
+    def update_gui_from_queue(self):
         try:
             while not self.data_queue.empty():
-                rp_data, l_data, status = self.data_queue.get_nowait() # Expect three values
-                if rp_data == "Error": # Check if error was signaled
+                rp_data, l_data, status_val = self.data_queue.get_nowait()
+                if rp_data == "Error":
                     self.rp_data_var.set("ERROR")
                     self.l_data_var.set("ERROR")
                     self.status_var.set("ERROR")
-                    self.status_bar_var.set("Read error occurred. Stopping.")
-                    self.stop_reading() # Force stop GUI elements
+                    self.status_bar_var.set("Live read error occurred. Stopping.")
+                    self.stop_live_reading() 
                 else:
                     self.rp_data_var.set(f"{rp_data}")
                     self.l_data_var.set(f"{l_data}")
-                    self.status_var.set(f"0x{status:02X}")
-                    if status & 0b10000000: # NO_SENSOR_OSC flag
-                        self.status_bar_var.set("Reading... WARNING: Oscillation Error!")
+                    self.status_var.set(f"0x{status_val:02X}")
+                    
+                    # Update the read-only status register in the main GUI as well
+                    status_addr = LDC1101_REGISTERS["STATUS"][0]
+                    if status_addr in self.register_vars:
+                         self.register_vars[status_addr].set(f"0x{status_val:02X}")
+
+                    if status_val & 0b10000000:
+                        self.status_bar_var.set("Live Reading... WARNING: Oscillation Error!")
                     elif self.is_reading.is_set():
-                        self.status_bar_var.set("Reading...")
-
-
+                        self.status_bar_var.set("Live Reading...")
         except queue.Empty:
-            pass # No new data, just continue
-        except ValueError: # Catch if queue did not contain 3 items as expected (e.g. during shutdown)
+            pass
+        except ValueError:
             print("Queue format error during update_gui.")
             pass
-
-
-        # Schedule the next update
-        self.root.after(100, self.update_gui) # Update GUI every 100ms
+        self.root.after(100, self.update_gui_from_queue)
 
     def on_closing(self):
-        """Handles window close event."""
         print("Close button clicked.")
         if self.is_reading.is_set():
-            self.is_reading.clear() # Signal thread to stop
-            if self.reading_thread and self.reading_thread.is_alive():
-                print("Waiting for reading thread to terminate before closing...")
-                self.reading_thread.join(timeout=0.5) # Wait a bit
+            self.stop_live_reading() # This also sets device to sleep
         self.ldc.cleanup()
         self.root.destroy()
-
 
 # --- Main Execution ---
 if __name__ == "__main__":
     root = tk.Tk()
+    # Ensure RPi.GPIO is cleaned up if a previous run failed badly
+    try:
+        GPIO.cleanup() 
+    except Exception:
+        pass # Ignore if cleanup fails (e.g. not setup)
+
     app = LdcTunerApp(root)
-    # Only run mainloop if initialization was successful
-    # The app constructor now handles destroy on init fail
-    if hasattr(app, 'ldc') and app.ldc.is_initialized : # Check if app and ldc were fully initialized
+    if hasattr(app, 'ldc') and app.ldc.is_initialized:
         try:
             root.mainloop()
         except Exception as e:
             print(f"Error in mainloop: {e}")
-        finally:
-            if app.is_reading.is_set(): # Ensure cleanup if mainloop crashes while reading
-                app.stop_reading()
-            app.ldc.cleanup() # Redundant if on_closing works, but good for safety
+        # finally: # on_closing should handle this, but as a fallback:
+        #     if hasattr(app, 'is_reading') and app.is_reading.is_set():
+        #         app.stop_live_reading()
+        #     if hasattr(app, 'ldc'):
+        #         app.ldc.cleanup()
     print("Application exited.")
