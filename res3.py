@@ -25,10 +25,12 @@ D_CONF_REG = 0x0C
 STATUS_REG = 0x20
 RP_DATA_LSB_REG = 0x21
 RP_DATA_MSB_REG = 0x22
+L_DATA_LSB_REG = 0x23  # L Conversion Result Data Output - bits 7:0
+L_DATA_MSB_REG = 0x24  # L Conversion Result Data Output - bits 15:8
 CHIP_ID_REG = 0x3F
 
 # GPIO settings
-CS_PIN = 8   # Chip Select pin (BCM numbering)
+CS_PIN = 8    # Chip Select pin (BCM numbering)
 
 # Power Modes
 ACTIVE_CONVERSION_MODE = 0x00
@@ -38,7 +40,7 @@ SLEEP_MODE = 0x01
 ESTIMATED_RP_SET = "0x25"
 ESTIMATED_TC1 = "0x9B"
 ESTIMATED_TC2 = "0xFB"
-ESTIMATED_DIG_CONF = "0xE4"
+ESTIMATED_DIG_CONF = "0xE4" # This (CONV_MODE=11) enables RP+L continuous
 
 # --- LDC1101 Communication Class ---
 class LDC1101_Driver:
@@ -128,8 +130,8 @@ class LDC1101_Driver:
         success &= self.write_register(TC1_REG, tc1)
         success &= self.write_register(TC2_REG, tc2)
         success &= self.write_register(DIG_CONFIG_REG, dig_conf)
-        # Ensure other necessary defaults for RP mode
-        success &= self.write_register(ALT_CONFIG_REG, 0x00)
+        # Ensure other necessary defaults for RP+L mode
+        success &= self.write_register(ALT_CONFIG_REG, 0x00) # Ensure L-measurement path enabled if DIG_CONF allows
         success &= self.write_register(D_CONF_REG, 0x00)
 
         if not success:
@@ -145,8 +147,8 @@ class LDC1101_Driver:
         mode = ACTIVE_CONVERSION_MODE if active else SLEEP_MODE
         print(f"Setting mode to {'Active' if active else 'Sleep'}...")
         if not self.write_register(START_CONFIG_REG, mode):
-             messagebox.showerror("Mode Error", f"Failed to set {'Active' if active else 'Sleep'} mode.")
-             return False
+            messagebox.showerror("Mode Error", f"Failed to set {'Active' if active else 'Sleep'} mode.")
+            return False
         time.sleep(0.01) # Allow mode transition
         return True
 
@@ -157,6 +159,17 @@ class LDC1101_Driver:
         lsb = self.read_register(RP_DATA_LSB_REG)
         if lsb == 0xFF: return -1 # Check for read error
         msb = self.read_register(RP_DATA_MSB_REG)
+        if msb == 0xFF: return -1 # Check for read error
+        value = (msb << 8) | lsb
+        return value
+
+    def get_l_data(self):
+        """Reads the 16-bit L data correctly."""
+        if not self.is_initialized: return -1 # Error indicator
+        # IMPORTANT: Read LSB (0x23) before MSB (0x24)
+        lsb = self.read_register(L_DATA_LSB_REG)
+        if lsb == 0xFF: return -1 # Check for read error
+        msb = self.read_register(L_DATA_MSB_REG)
         if msb == 0xFF: return -1 # Check for read error
         value = (msb << 8) | lsb
         return value
@@ -172,9 +185,9 @@ class LDC1101_Driver:
         if self.spi:
             try:
                 # Try to put device to sleep before closing
-                self.set_active_mode(False)
+                if self.is_initialized : self.set_active_mode(False) # Check if initialized before setting mode
             except Exception as e:
-                 print(f"Could not set sleep mode during cleanup: {e}")
+                print(f"Could not set sleep mode during cleanup: {e}")
             try:
                 self.spi.close()
                 self.spi = None
@@ -192,11 +205,11 @@ class LDC1101_Driver:
 class LdcTunerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("LDC1101 RP Tuner")
-        # self.root.geometry("400x350") # Adjust size as needed
+        self.root.title("LDC1101 RP & L Tuner")
+        # self.root.geometry("400x400") # Adjust size as needed
 
         self.ldc = LDC1101_Driver()
-        self.data_queue = queue.Queue() # Queue for RP/Status data from thread
+        self.data_queue = queue.Queue() # Queue for RP/L/Status data from thread
         self.reading_thread = None
         self.is_reading = threading.Event() # Event to signal thread to stop
 
@@ -250,15 +263,20 @@ class LdcTunerApp:
         measure_frame = ttk.LabelFrame(main_frame, text="Live Measurements", padding="10")
         measure_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
 
-        ttk.Label(measure_frame, text="RP Data:").grid(row=0, column=0, sticky=tk.W, padx=5)
+        ttk.Label(measure_frame, text="RP Data:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
         self.rp_data_var = tk.StringVar(value="---")
         self.rp_data_label = ttk.Label(measure_frame, textvariable=self.rp_data_var, font=("Consolas", 12), width=8, anchor=tk.E)
-        self.rp_data_label.grid(row=0, column=1, sticky=tk.E, padx=5)
+        self.rp_data_label.grid(row=0, column=1, sticky=tk.E, padx=5, pady=2)
 
-        ttk.Label(measure_frame, text="Status (0x20):").grid(row=1, column=0, sticky=tk.W, padx=5)
+        ttk.Label(measure_frame, text="L Data:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+        self.l_data_var = tk.StringVar(value="---")
+        self.l_data_label = ttk.Label(measure_frame, textvariable=self.l_data_var, font=("Consolas", 12), width=8, anchor=tk.E)
+        self.l_data_label.grid(row=1, column=1, sticky=tk.E, padx=5, pady=2)
+
+        ttk.Label(measure_frame, text="Status (0x20):").grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
         self.status_var = tk.StringVar(value="0x--")
         self.status_label = ttk.Label(measure_frame, textvariable=self.status_var, font=("Consolas", 12), width=8, anchor=tk.E)
-        self.status_label.grid(row=1, column=1, sticky=tk.E, padx=5)
+        self.status_label.grid(row=2, column=1, sticky=tk.E, padx=5, pady=2)
 
         # Start/Stop Buttons
         control_frame = ttk.Frame(main_frame)
@@ -321,9 +339,9 @@ class LdcTunerApp:
         self.root.update_idletasks()
 
         if not self.ldc.is_initialized:
-             messagebox.showwarning("Not Initialized", "Device not initialized or Chip ID wrong.")
-             self.status_bar_var.set("Read failed: Not initialized.")
-             return
+            messagebox.showwarning("Not Initialized", "Device not initialized or Chip ID wrong.")
+            self.status_bar_var.set("Read failed: Not initialized.")
+            return
 
         was_reading = self.is_reading.is_set()
         if was_reading:
@@ -339,8 +357,8 @@ class LdcTunerApp:
         dig_conf = self.ldc.read_register(DIG_CONFIG_REG)
 
         if 0xFF in [rp_set, tc1, tc2, dig_conf]:
-             messagebox.showerror("Read Error", "Failed to read one or more registers.")
-             self.status_bar_var.set("Read failed: SPI error.")
+            messagebox.showerror("Read Error", "Failed to read one or more registers.")
+            self.status_bar_var.set("Read failed: SPI error.")
         else:
             self.rp_set_var.set(f"0x{rp_set:02X}")
             self.tc1_var.set(f"0x{tc1:02X}")
@@ -350,11 +368,11 @@ class LdcTunerApp:
 
         # Restore previous mode if needed
         if was_reading:
-             self.start_reading()
+            self.start_reading()
         else:
-             # Leave in sleep or set active if preferred after read
-             # self.ldc.set_active_mode(True)
-             pass
+            # Leave in sleep or set active if preferred after read
+            # self.ldc.set_active_mode(True)
+            pass
 
 
     def start_reading(self):
@@ -382,9 +400,10 @@ class LdcTunerApp:
         self.is_reading.clear() # Signal thread to stop
         if self.reading_thread and self.reading_thread.is_alive():
             print("Waiting for reading thread to stop...")
-            self.reading_thread.join(timeout=0.5) # Wait briefly for thread to exit loop
+            # Give a bit more time for the thread to join if it's in a sleep
+            self.reading_thread.join(timeout=0.2)
             if self.reading_thread.is_alive():
-                 print("Warning: Reading thread did not stop gracefully.")
+                print("Warning: Reading thread did not stop gracefully.")
 
         self.ldc.set_active_mode(False) # Put device back to sleep
 
@@ -393,8 +412,9 @@ class LdcTunerApp:
         self.write_btn.config(state=tk.NORMAL)
         self.read_btn.config(state=tk.NORMAL)
         self.status_bar_var.set("Reading stopped.")
-        # Clear display when stopped
+        # Clear display when stopped (optional)
         # self.rp_data_var.set("---")
+        # self.l_data_var.set("---")
         # self.status_var.set("0x--")
 
     def read_data_loop(self):
@@ -403,22 +423,22 @@ class LdcTunerApp:
         while self.is_reading.is_set():
             status = self.ldc.get_status()
             rp_data = self.ldc.get_rp_data()
+            l_data = self.ldc.get_l_data()
 
             # Check for errors from read functions
-            if status == 0xFF or rp_data == -1:
-                 print("Read error in loop, stopping.")
-                 # Put error indication in queue?
-                 self.data_queue.put(("Error", "Error"))
-                 self.is_reading.clear() # Signal stop
-                 break # Exit thread loop on error
+            if status == 0xFF or rp_data == -1 or l_data == -1:
+                print("Read error in loop, stopping.")
+                self.data_queue.put(("Error", "Error", "Error")) # Signal error for all values
+                self.is_reading.clear() # Signal stop
+                break # Exit thread loop on error
 
             # Put valid data into the queue for the GUI thread
-            self.data_queue.put((rp_data, status))
+            self.data_queue.put((rp_data, l_data, status))
 
             # Check status register for device errors
             if status & 0b10000000: # NO_SENSOR_OSC
                 print("!!! WARNING: Sensor Oscillation Error detected (STATUS bit 7 = 1) !!!")
-                # Maybe put a specific message in queue?
+            # Add other status bit checks if needed (e.g., DRDY_L, DRDY_RP)
 
             time.sleep(0.05) # ~20 Hz read rate - adjust as needed
 
@@ -428,23 +448,29 @@ class LdcTunerApp:
         """Periodically checks the queue and updates GUI labels."""
         try:
             while not self.data_queue.empty():
-                rp_data, status = self.data_queue.get_nowait()
-                if rp_data == "Error":
+                rp_data, l_data, status = self.data_queue.get_nowait() # Expect three values
+                if rp_data == "Error": # Check if error was signaled
                     self.rp_data_var.set("ERROR")
+                    self.l_data_var.set("ERROR")
                     self.status_var.set("ERROR")
                     self.status_bar_var.set("Read error occurred. Stopping.")
                     self.stop_reading() # Force stop GUI elements
                 else:
                     self.rp_data_var.set(f"{rp_data}")
+                    self.l_data_var.set(f"{l_data}")
                     self.status_var.set(f"0x{status:02X}")
                     if status & 0b10000000: # NO_SENSOR_OSC flag
-                         self.status_bar_var.set("Reading... WARNING: Oscillation Error!")
+                        self.status_bar_var.set("Reading... WARNING: Oscillation Error!")
                     elif self.is_reading.is_set():
-                         self.status_bar_var.set("Reading...")
+                        self.status_bar_var.set("Reading...")
 
 
         except queue.Empty:
             pass # No new data, just continue
+        except ValueError: # Catch if queue did not contain 3 items as expected (e.g. during shutdown)
+            print("Queue format error during update_gui.")
+            pass
+
 
         # Schedule the next update
         self.root.after(100, self.update_gui) # Update GUI every 100ms
@@ -453,7 +479,10 @@ class LdcTunerApp:
         """Handles window close event."""
         print("Close button clicked.")
         if self.is_reading.is_set():
-            self.stop_reading()
+            self.is_reading.clear() # Signal thread to stop
+            if self.reading_thread and self.reading_thread.is_alive():
+                print("Waiting for reading thread to terminate before closing...")
+                self.reading_thread.join(timeout=0.5) # Wait a bit
         self.ldc.cleanup()
         self.root.destroy()
 
@@ -463,7 +492,14 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = LdcTunerApp(root)
     # Only run mainloop if initialization was successful
-    if app.ldc.is_initialized:
-        root.mainloop()
+    # The app constructor now handles destroy on init fail
+    if hasattr(app, 'ldc') and app.ldc.is_initialized : # Check if app and ldc were fully initialized
+        try:
+            root.mainloop()
+        except Exception as e:
+            print(f"Error in mainloop: {e}")
+        finally:
+            if app.is_reading.is_set(): # Ensure cleanup if mainloop crashes while reading
+                app.stop_reading()
+            app.ldc.cleanup() # Redundant if on_closing works, but good for safety
     print("Application exited.")
-
