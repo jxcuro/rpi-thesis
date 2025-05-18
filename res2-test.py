@@ -1,6 +1,7 @@
 import spidev
 import time
 import RPi.GPIO as GPIO
+import pigpio
 
 # SPI settings
 SPI_BUS = 0
