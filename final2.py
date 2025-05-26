@@ -1,11 +1,12 @@
-# CODE 3.0.17 - AI Metal Classifier GUI with Results Page, GPIO Calibrate (Silent), and Screenshot
+# CODE 3.0.18 - AI Metal Classifier GUI with Auto-Calibrate on Next and Screenshot
 # Description: Displays live sensor data and camera feed.
 #              Captures image and sensor readings, classifies metal using a TFLite model,
 #              displays the results on a dedicated page, sends a sorting signal via GPIO.
 #              Triggers sensor calibration upon receiving a signal on GPIO 5 (BCM).
 #              Adds a checkbox to save classification results (image + data) as a screenshot.
-# Version: 3.0.17 - Removed user prompts (message boxes) from the sensor calibration
-#                  process, making it run silently in the background when triggered.
+#              Automatically calibrates sensors when 'Classify Another' is clicked.
+# Version: 3.0.18 - Modified the 'Classify Another' button to automatically trigger
+#                  the silent sensor calibration before returning to the live view.
 #                  Maintained expanded code formatting for readability.
 # FIXED:       Potential mismatch between sensor data processing and scaler expectation.
 # DEBUG:       Enhanced prints in capture_and_classify, preprocess_input, run_inference, postprocess_output.
@@ -578,6 +579,12 @@ def send_sorting_signal(material_label): # Unchanged
 # ==============================
 # === View Switching Logic ===
 # ==============================
+def calibrate_and_show_live_view():
+    """Calls sensor calibration and then switches back to the live view."""
+    print("--- 'Classify Another' clicked, starting auto-calibration ---")
+    calibrate_sensors() # Call the (now silent) calibration
+    show_live_view()    # Switch back to live view
+
 def show_live_view(): # Unchanged
     global live_view_frame, results_view_frame, lv_classify_button, interpreter
     if results_view_frame and results_view_frame.winfo_ismapped():
@@ -823,7 +830,7 @@ def capture_and_classify(): # Unchanged
     print("="*10 + " Capture & Classify Complete " + "="*10 + "\n")
 
 
-def calibrate_sensors(): # MODIFIED: Removed message boxes
+def calibrate_sensors(): # Unchanged (Silent version)
     global IDLE_VOLTAGE, IDLE_RP_VALUE, window, previous_filtered_mag_mT
     global lv_calibrate_button, lv_classify_button, hall_sensor, ldc_initialized, interpreter
 
@@ -838,8 +845,6 @@ def calibrate_sensors(): # MODIFIED: Removed message boxes
         print("Calibration aborted: GUI window not available."); return
 
     print("Starting automatic sensor calibration... Ensure NO metal object is near sensors.")
-    # No prompt, it will proceed directly. A small delay might be added if needed.
-    # time.sleep(1)
 
     if lv_calibrate_button: lv_calibrate_button.config(state=tk.DISABLED)
     # Also disable classify button during calibration
@@ -970,7 +975,7 @@ def check_calibrate_signal(): # Unchanged
 # ======================
 # === GUI Setup ========
 # ======================
-def setup_gui(): # Unchanged
+def setup_gui(): # MODIFIED: Changed results button command
     global window, main_frame, placeholder_img_tk, live_view_frame, results_view_frame
     global lv_camera_label, lv_magnetism_label, lv_ldc_label, lv_classify_button, lv_calibrate_button, lv_save_checkbox # Added checkbox
     global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, rv_classify_another_button
@@ -979,7 +984,7 @@ def setup_gui(): # Unchanged
 
     print("Setting up GUI...")
     window = tk.Tk()
-    window.title("AI Metal Classifier v3.0.17 (RPi - GPIO Calibrate & Save)") # Updated title
+    window.title("AI Metal Classifier v3.0.18 (RPi - Auto Calibrate Next)") # Updated title
     window.geometry("800x600")
     style = ttk.Style()
     available_themes = style.theme_names(); style.theme_use('clam' if 'clam' in available_themes else 'default')
@@ -1036,7 +1041,9 @@ def setup_gui(): # Unchanged
     ttk.Label(rv_details_frame, text="Sensor Values Used:", font=result_title_font).grid(row=res_row, column=0, columnspan=2, sticky="w", pady=(0,3)); res_row += 1
     ttk.Label(rv_details_frame, text=" Magnetism:", font=result_title_font).grid(row=res_row, column=0, sticky="w", padx=(5,5)); rv_magnetism_label = ttk.Label(rv_details_frame, text="---", style="ResultValue.TLabel"); rv_magnetism_label.grid(row=res_row, column=1, sticky="ew", padx=5); res_row += 1
     ttk.Label(rv_details_frame, text=" LDC Reading:", font=result_title_font).grid(row=res_row, column=0, sticky="w", padx=(5,5)); rv_ldc_label = ttk.Label(rv_details_frame, text="---", style="ResultValue.TLabel"); rv_ldc_label.grid(row=res_row, column=1, sticky="ew", padx=5); res_row += 1
-    rv_classify_another_button = ttk.Button(rv_content_frame, text="<< Classify Another", command=show_live_view); rv_classify_another_button.grid(row=3, column=0, columnspan=2, pady=(15, 5))
+    # --- MODIFIED: Changed command to the new function ---
+    rv_classify_another_button = ttk.Button(rv_content_frame, text="<< Classify Another", command=calibrate_and_show_live_view); rv_classify_another_button.grid(row=3, column=0, columnspan=2, pady=(15, 5))
+    # --- END MODIFIED ---
 
     clear_results_display()
     show_live_view() # This will set initial classify button state
