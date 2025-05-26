@@ -1,13 +1,11 @@
-# CODE 3.0.16 - AI Metal Classifier GUI with Results Page, GPIO Calibrate, and Screenshot
+# CODE 3.0.17 - AI Metal Classifier GUI with Results Page, GPIO Calibrate (Silent), and Screenshot
 # Description: Displays live sensor data and camera feed.
 #              Captures image and sensor readings, classifies metal using a TFLite model,
 #              displays the results on a dedicated page, sends a sorting signal via GPIO.
 #              Triggers sensor calibration upon receiving a signal on GPIO 5 (BCM).
 #              Adds a checkbox to save classification results (image + data) as a screenshot.
-# Version: 3.0.16 - Added a checkbox ("Save Result") and functionality to save the
-#                  classification result (image, prediction, confidence, sensor data)
-#                  as a PNG image in a "testing" folder with sequential naming.
-#                  Uses Pillow for image creation and saving.
+# Version: 3.0.17 - Removed user prompts (message boxes) from the sensor calibration
+#                  process, making it run silently in the background when triggered.
 #                  Maintained expanded code formatting for readability.
 # FIXED:       Potential mismatch between sensor data processing and scaler expectation.
 # DEBUG:       Enhanced prints in capture_and_classify, preprocess_input, run_inference, postprocess_output.
@@ -604,7 +602,7 @@ def show_results_view(): # Unchanged
 # ============================
 # === Screenshot Function ===
 # ============================
-def save_result_screenshot(image_pil, prediction, confidence, mag_text, ldc_text):
+def save_result_screenshot(image_pil, prediction, confidence, mag_text, ldc_text): # Unchanged
     """Creates and saves a composite image of the results."""
     global BASE_PATH, TESTING_FOLDER_NAME, RESULT_IMG_DISPLAY_WIDTH
 
@@ -727,7 +725,7 @@ def clear_results_display(): # Unchanged
     if rv_magnetism_label: rv_magnetism_label.config(text=default_text)
     if rv_ldc_label: rv_ldc_label.config(text=default_text)
 
-def capture_and_classify():
+def capture_and_classify(): # Unchanged
     global lv_classify_button, window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, interpreter
     global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label
     global save_output_var # Need access to the checkbox variable
@@ -825,22 +823,23 @@ def capture_and_classify():
     print("="*10 + " Capture & Classify Complete " + "="*10 + "\n")
 
 
-def calibrate_sensors(): # Unchanged
+def calibrate_sensors(): # MODIFIED: Removed message boxes
     global IDLE_VOLTAGE, IDLE_RP_VALUE, window, previous_filtered_mag_mT
     global lv_calibrate_button, lv_classify_button, hall_sensor, ldc_initialized, interpreter
 
     print("\n" + "="*10 + " Sensor Calibration Triggered " + "="*10)
     hall_avail, ldc_avail = hall_sensor is not None, ldc_initialized
     if not hall_avail and not ldc_avail:
-        messagebox.showwarning("Calibration", "Neither Hall nor LDC sensor is available."); print("Aborted: No sensors."); return
-    instr = "Ensure NO metal object is near sensors.\n\n"
-    if hall_avail: instr += "- Hall sensor idle voltage will be measured.\n"
-    if ldc_avail: instr += "- LDC sensor idle RP value will be measured.\n"
-    instr += "\nClick OK to start calibration."
-    # Check if window exists before showing messagebox (needed for GPIO trigger)
+        print("Warning: Calibration - Neither Hall nor LDC sensor is available.")
+        print("Aborted: No sensors."); return
+
+    # Check if window exists before proceeding (needed for GUI updates)
     if not window or not window.winfo_exists():
         print("Calibration aborted: GUI window not available."); return
-    if not messagebox.askokcancel("Calibration Instructions", instr): print("Calibration cancelled."); return
+
+    print("Starting automatic sensor calibration... Ensure NO metal object is near sensors.")
+    # No prompt, it will proceed directly. A small delay might be added if needed.
+    # time.sleep(1)
 
     if lv_calibrate_button: lv_calibrate_button.config(state=tk.DISABLED)
     # Also disable classify button during calibration
@@ -869,10 +868,10 @@ def calibrate_sensors(): # Unchanged
         else: # AI not ready
             lv_classify_button.config(state=tk.DISABLED, text="Classify (AI Failed)")
 
-    msg = f"Calibration Results:\n\n{hall_res}\n{ldc_res}"
+    print(f"Calibration Results: {hall_res} | {ldc_res}")
+    if (hall_avail and not hall_ok) or (ldc_avail and not ldc_ok):
+         print("WARNING: One or more sensors failed to calibrate correctly.")
     print("--- Calibration Complete ---")
-    if (hall_avail and not hall_ok) or (ldc_avail and not ldc_ok): messagebox.showwarning("Calibration Warning", msg)
-    else: messagebox.showinfo("Calibration Complete", msg)
     print("="*10 + " Sensor Calibration Finished " + "="*10 + "\n")
 
 
@@ -953,10 +952,8 @@ def check_calibrate_signal(): # Unchanged
             if current_state == GPIO.HIGH and not calibrate_signal_high:
                 print(f"Calibration signal DETECTED on GPIO {CALIBRATE_TRIGGER_PIN}!")
                 calibrate_signal_high = True
-                # Call calibrate_sensors. Since it shows message boxes,
-                # it's best to call it directly (or via a short 'after')
-                # so it runs in the main GUI thread. Using edge detection
-                # prevents rapid re-triggering while it runs.
+                # Call calibrate_sensors. Since it no longer shows message boxes,
+                # it's less disruptive, but still best to call via 'after'.
                 window.after(10, calibrate_sensors)
 
             elif current_state == GPIO.LOW:
@@ -973,7 +970,7 @@ def check_calibrate_signal(): # Unchanged
 # ======================
 # === GUI Setup ========
 # ======================
-def setup_gui():
+def setup_gui(): # Unchanged
     global window, main_frame, placeholder_img_tk, live_view_frame, results_view_frame
     global lv_camera_label, lv_magnetism_label, lv_ldc_label, lv_classify_button, lv_calibrate_button, lv_save_checkbox # Added checkbox
     global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, rv_classify_another_button
@@ -982,7 +979,7 @@ def setup_gui():
 
     print("Setting up GUI...")
     window = tk.Tk()
-    window.title("AI Metal Classifier v3.0.16 (RPi - GPIO Calibrate & Save)") # Updated title
+    window.title("AI Metal Classifier v3.0.17 (RPi - GPIO Calibrate & Save)") # Updated title
     window.geometry("800x600")
     style = ttk.Style()
     available_themes = style.theme_names(); style.theme_use('clam' if 'clam' in available_themes else 'default')
