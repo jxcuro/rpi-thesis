@@ -1,10 +1,13 @@
-# CODE 3.0.15 - AI Metal Classifier GUI with Results Page and GPIO Calibration Trigger
+# CODE 3.0.16 - AI Metal Classifier GUI with Results Page, GPIO Calibrate, and Screenshot
 # Description: Displays live sensor data and camera feed.
 #              Captures image and sensor readings, classifies metal using a TFLite model,
 #              displays the results on a dedicated page, sends a sorting signal via GPIO.
 #              Triggers sensor calibration upon receiving a signal on GPIO 5 (BCM).
-# Version: 3.0.15 - Removed GPIO 5 enable/disable logic for classification.
-#                  Implemented GPIO 5 as a trigger for automatic sensor calibration.
+#              Adds a checkbox to save classification results (image + data) as a screenshot.
+# Version: 3.0.16 - Added a checkbox ("Save Result") and functionality to save the
+#                  classification result (image, prediction, confidence, sensor data)
+#                  as a PNG image in a "testing" folder with sequential naming.
+#                  Uses Pillow for image creation and saving.
 #                  Maintained expanded code formatting for readability.
 # FIXED:       Potential mismatch between sensor data processing and scaler expectation.
 # DEBUG:       Enhanced prints in capture_and_classify, preprocess_input, run_inference, postprocess_output.
@@ -14,7 +17,7 @@ from tkinter import ttk
 from tkinter import font as tkFont
 from tkinter import messagebox
 import cv2 # OpenCV for camera access
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw, ImageFont # Added ImageDraw, ImageFont
 import time
 import os
 import statistics
@@ -125,6 +128,7 @@ SCALER_FILENAME = "numerical_scaler.joblib"
 MODEL_PATH = os.path.join(BASE_PATH, MODEL_FILENAME)
 LABELS_PATH = os.path.join(BASE_PATH, LABELS_FILENAME)
 SCALER_PATH = os.path.join(BASE_PATH, SCALER_FILENAME)
+TESTING_FOLDER_NAME = "testing" # Folder to save screenshots
 
 AI_IMG_WIDTH = 224
 AI_IMG_HEIGHT = 224
@@ -172,9 +176,10 @@ main_frame = None
 live_view_frame = None
 results_view_frame = None
 label_font, readout_font, button_font, title_font, result_title_font, result_value_font, pred_font = (None,) * 7
-lv_camera_label, lv_magnetism_label, lv_ldc_label, lv_classify_button, lv_calibrate_button = (None,) * 5
+lv_camera_label, lv_magnetism_label, lv_ldc_label, lv_classify_button, lv_calibrate_button, lv_save_checkbox = (None,) * 6 # Added checkbox
 rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, rv_classify_another_button = (None,) * 6
 placeholder_img_tk = None
+save_output_var = None # Added Int Var for checkbox
 
 # --- State for GPIO calibration trigger ---
 calibrate_signal_high = False # Tracks if GPIO 5 is currently HIGH (for edge detection)
@@ -292,6 +297,15 @@ def initialize_hardware():
     else:
         print(f"Skipping Calibration Trigger Pin {CALIBRATE_TRIGGER_PIN} setup (RPi.GPIO not available or BCM mode failed).")
         CALIBRATE_PIN_SETUP_OK = False
+
+    # --- Create Testing Folder ---
+    try:
+        testing_path = os.path.join(BASE_PATH, TESTING_FOLDER_NAME)
+        os.makedirs(testing_path, exist_ok=True)
+        print(f"Ensured testing folder exists: {testing_path}")
+    except Exception as e:
+        print(f"ERROR: Could not create testing folder: {e}")
+
 
     print("--- Hardware Initialization Complete ---")
 
@@ -566,7 +580,7 @@ def send_sorting_signal(material_label): # Unchanged
 # ==============================
 # === View Switching Logic ===
 # ==============================
-def show_live_view():
+def show_live_view(): # Unchanged
     global live_view_frame, results_view_frame, lv_classify_button, interpreter
     if results_view_frame and results_view_frame.winfo_ismapped():
         results_view_frame.pack_forget()
@@ -586,6 +600,112 @@ def show_results_view(): # Unchanged
         live_view_frame.pack_forget()
     if results_view_frame and not results_view_frame.winfo_ismapped():
         results_view_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+# ============================
+# === Screenshot Function ===
+# ============================
+def save_result_screenshot(image_pil, prediction, confidence, mag_text, ldc_text):
+    """Creates and saves a composite image of the results."""
+    global BASE_PATH, TESTING_FOLDER_NAME, RESULT_IMG_DISPLAY_WIDTH
+
+    print("\n--- Saving Result Screenshot ---")
+    testing_folder = os.path.join(BASE_PATH, TESTING_FOLDER_NAME)
+
+    try:
+        # Ensure the folder exists (it should, but check again)
+        os.makedirs(testing_folder, exist_ok=True)
+    except Exception as e:
+        print(f"ERROR: Cannot create/access testing folder '{testing_folder}': {e}")
+        messagebox.showerror("Save Error", f"Could not create/access folder:\n{testing_folder}")
+        return
+
+    # Find the next available filename (data_1.png, data_2.png, etc.)
+    i = 1
+    while True:
+        filename = os.path.join(testing_folder, f"data_{i}.png")
+        if not os.path.exists(filename):
+            break
+        i += 1
+        if i > 9999: # Safety break
+            print("ERROR: More than 9999 result files exist. Cannot save.")
+            messagebox.showerror("Save Error", "Too many result files exist.")
+            return
+
+    # --- Create Composite Image ---
+    IMG_WIDTH = 400
+    IMG_HEIGHT = 600
+    BG_COLOR = "white"
+    TEXT_COLOR = "black"
+    MARGIN = 20
+    IMG_DISPLAY_WIDTH_SS = RESULT_IMG_DISPLAY_WIDTH # 280
+    FONT_SIZE_TITLE = 20
+    FONT_SIZE_TEXT = 16
+    LINE_SPACING = 5 # Pixels between lines
+
+    try:
+        # Try finding common fonts, fallback to default
+        try:
+            font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", FONT_SIZE_TITLE)
+            font_text = ImageFont.truetype("DejaVuSans.ttf", FONT_SIZE_TEXT)
+        except IOError:
+            print("Warning: DejaVu fonts not found, using default PIL font.")
+            font_title = ImageFont.load_default()
+            font_text = ImageFont.load_default()
+
+        ss_img = Image.new('RGB', (IMG_WIDTH, IMG_HEIGHT), BG_COLOR)
+        draw = ImageDraw.Draw(ss_img)
+
+        y_pos = MARGIN
+
+        # Title
+        title_w, title_h = draw.textsize("Classification Result", font=font_title)
+        draw.text(((IMG_WIDTH - title_w) / 2, y_pos), "Classification Result", fill=TEXT_COLOR, font=font_title)
+        y_pos += title_h + 15
+
+        # Display image (resize as done for the results view)
+        w, h_img = image_pil.size
+        aspect = h_img / w if w > 0 else 0.75
+        display_h = int(IMG_DISPLAY_WIDTH_SS * aspect) if aspect > 0 else int(IMG_DISPLAY_WIDTH_SS * 0.75)
+        img_disp = image_pil.resize((IMG_DISPLAY_WIDTH_SS, max(1, display_h)), Image.Resampling.LANCZOS)
+
+        img_x = (IMG_WIDTH - IMG_DISPLAY_WIDTH_SS) // 2
+        ss_img.paste(img_disp, (img_x, y_pos))
+        y_pos += display_h + 20
+
+        # Details
+        details = [
+            (f"Material:", f"{prediction}", font_title),
+            (f"Confidence:", f"{confidence:.1%}", font_text),
+            ("--- Sensor Values ---", "", font_text),
+            (f" Magnetism:", f"{mag_text}", font_text),
+            (f" LDC Reading:", f"{ldc_text}", font_text),
+        ]
+
+        # Find max label width for alignment
+        max_label_w = 0
+        for label, _, font in details:
+            lw, _ = draw.textsize(label, font=font)
+            max_label_w = max(max_label_w, lw)
+
+        value_x = MARGIN + max_label_w + 10
+
+        for label, value, font in details:
+            _, lh = draw.textsize("A", font=font) # Get line height
+            if value:
+                draw.text((MARGIN, y_pos), label, fill=TEXT_COLOR, font=font)
+                draw.text((value_x, y_pos), value, fill=TEXT_COLOR, font=font)
+            else: # For separator text
+                draw.text((MARGIN, y_pos), label, fill=TEXT_COLOR, font=font)
+            y_pos += lh + LINE_SPACING
+
+        # Save the image
+        ss_img.save(filename)
+        print(f"Result saved successfully to: {filename}")
+
+    except Exception as e:
+        print(f"ERROR: Failed to create or save screenshot: {e}")
+        traceback.print_exc()
+        messagebox.showerror("Save Error", f"Failed to save screenshot:\n{e}")
 
 # ======================
 # === GUI Functions ===
@@ -610,6 +730,7 @@ def clear_results_display(): # Unchanged
 def capture_and_classify():
     global lv_classify_button, window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, interpreter
     global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label
+    global save_output_var # Need access to the checkbox variable
 
     print("\n" + "="*10 + " Capture & Classify Triggered " + "="*10)
     if not interpreter:
@@ -675,6 +796,12 @@ def capture_and_classify():
 
     predicted_label, confidence = postprocess_output(output_data)
     print(f"--- Classification Result: Prediction='{predicted_label}', Confidence={confidence:.1%} ---")
+
+    # --- NEW: Check if saving is enabled and save if so ---
+    if save_output_var and save_output_var.get() == 1:
+        save_result_screenshot(img_captured_pil, predicted_label, confidence, mag_display_text, ldc_display_text)
+    # --- End NEW ---
+
     send_sorting_signal(predicted_label)
 
     # Update Results Display
@@ -696,10 +823,9 @@ def capture_and_classify():
 
     show_results_view()
     print("="*10 + " Capture & Classify Complete " + "="*10 + "\n")
-    # --- Classification is complete. The user must click "Classify Another" to return. ---
 
 
-def calibrate_sensors(): # Unchanged except for classify button restore logic
+def calibrate_sensors(): # Unchanged
     global IDLE_VOLTAGE, IDLE_RP_VALUE, window, previous_filtered_mag_mT
     global lv_calibrate_button, lv_classify_button, hall_sensor, ldc_initialized, interpreter
 
@@ -814,8 +940,7 @@ def update_ldc_reading(): # Unchanged
     if lv_ldc_label and lv_ldc_label.cget("text") != display_text: lv_ldc_label.config(text=display_text)
     if window and window.winfo_exists(): window.after(GUI_UPDATE_INTERVAL_MS, update_ldc_reading)
 
-# --- NEW: Function to check the calibration trigger GPIO pin ---
-def check_calibrate_signal():
+def check_calibrate_signal(): # Unchanged
     global window, CALIBRATE_PIN_SETUP_OK, RPi_GPIO_AVAILABLE, CALIBRATE_TRIGGER_PIN
     global calibrate_signal_high # Use the edge-detection flag
 
@@ -848,15 +973,16 @@ def check_calibrate_signal():
 # ======================
 # === GUI Setup ========
 # ======================
-def setup_gui(): # Unchanged
+def setup_gui():
     global window, main_frame, placeholder_img_tk, live_view_frame, results_view_frame
-    global lv_camera_label, lv_magnetism_label, lv_ldc_label, lv_classify_button, lv_calibrate_button
+    global lv_camera_label, lv_magnetism_label, lv_ldc_label, lv_classify_button, lv_calibrate_button, lv_save_checkbox # Added checkbox
     global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, rv_classify_another_button
     global label_font, readout_font, button_font, title_font, result_title_font, result_value_font, pred_font
+    global save_output_var # Added Int Var
 
     print("Setting up GUI...")
     window = tk.Tk()
-    window.title("AI Metal Classifier v3.0.15 (RPi Combined - GPIO Calibrate)") # Updated title
+    window.title("AI Metal Classifier v3.0.16 (RPi - GPIO Calibrate & Save)") # Updated title
     window.geometry("800x600")
     style = ttk.Style()
     available_themes = style.theme_names(); style.theme_use('clam' if 'clam' in available_themes else 'default')
@@ -875,6 +1001,7 @@ def setup_gui(): # Unchanged
     style.configure("TLabel", font=label_font, padding=2); style.configure("TButton", font=button_font, padding=(8,5))
     style.configure("Readout.TLabel", font=readout_font, foreground="#0000AA"); style.configure("ResultValue.TLabel", font=result_value_font, foreground="#0000AA")
     style.configure("Prediction.TLabel", font=pred_font, foreground="#AA0000")
+    style.configure("TCheckbutton", font=label_font) # Style for checkbutton text
 
     main_frame = ttk.Frame(window, padding="5 5 5 5"); main_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
     main_frame.rowconfigure(0, weight=1); main_frame.columnconfigure(0, weight=1)
@@ -889,6 +1016,12 @@ def setup_gui(): # Unchanged
     lv_actions_frame = ttk.Labelframe(lv_controls_frame, text=" Actions ", padding="8 4 8 8"); lv_actions_frame.grid(row=1, column=0, sticky="new", pady=(0,10)); lv_actions_frame.columnconfigure(0, weight=1)
     lv_classify_button = ttk.Button(lv_actions_frame, text="Capture & Classify", command=capture_and_classify); lv_classify_button.grid(row=0, column=0, sticky="ew", pady=(4,4))
     lv_calibrate_button = ttk.Button(lv_actions_frame, text="Calibrate Sensors", command=calibrate_sensors); lv_calibrate_button.grid(row=1, column=0, sticky="ew", pady=(4,4))
+
+    # --- Add Checkbox ---
+    save_output_var = tk.IntVar(value=0) # Initialize to unchecked
+    lv_save_checkbox = ttk.Checkbutton(lv_actions_frame, text="Save Result Screenshot", variable=save_output_var)
+    lv_save_checkbox.grid(row=2, column=0, sticky="w", pady=(6,4), padx=(5,0))
+    # --- End Add Checkbox ---
 
     results_view_frame = ttk.Frame(main_frame, padding="10 10 10 10"); results_view_frame.rowconfigure(0, weight=1); results_view_frame.rowconfigure(1, weight=0); results_view_frame.rowconfigure(2, weight=1)
     results_view_frame.columnconfigure(0, weight=1); results_view_frame.columnconfigure(1, weight=0); results_view_frame.columnconfigure(2, weight=1)
@@ -915,7 +1048,7 @@ def setup_gui(): # Unchanged
 # ==========================
 # === Main Execution =======
 # ==========================
-def run_application():
+def run_application(): # Unchanged
     global window, lv_camera_label, lv_magnetism_label, lv_ldc_label, lv_classify_button, lv_calibrate_button
     global interpreter, camera, hall_sensor, ldc_initialized
 
