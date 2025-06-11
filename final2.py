@@ -918,9 +918,9 @@ def update_camera_feed(): # Unchanged
                  lv_camera_label.configure(image='', text="Camera Failed"); lv_camera_label.img_tk = None
     if window and window.winfo_exists(): window.after(CAMERA_UPDATE_INTERVAL_MS, update_camera_feed)
 
-def update_magnetism(): # MODIFIED: Stores the latest live value globally
+def update_magnetism(): # MODIFIED: Added a deadzone to prevent drift
     global lv_magnetism_label, window, previous_filtered_mag_mT, IDLE_VOLTAGE, hall_sensor
-    global g_last_live_magnetism_mT # Add this to access the global
+    global g_last_live_magnetism_mT
 
     if not window or not window.winfo_exists(): return
     display_text = "N/A"
@@ -930,10 +930,20 @@ def update_magnetism(): # MODIFIED: Stores the latest live value globally
             try:
                 if abs(SENSITIVITY_V_PER_MILLITESLA) < 1e-9: raise ZeroDivisionError("Sens0")
                 raw_mT = (avg_v - IDLE_VOLTAGE) / SENSITIVITY_V_PER_MILLITESLA
+
+                # --- NEW: Deadzone to Prevent Drift Accumulation ---
+                # Define a threshold to ignore minor drift, e.g., 1.5 microteslas.
+                drift_threshold_mT = 0.0015
+                # If the new, raw reading is smaller than the threshold, treat it as zero.
+                # This stops the filter from accumulating small drift errors over time.
+                if abs(raw_mT) < drift_threshold_mT:
+                    raw_mT = 0.0
+                # --- END OF NEW LOGIC ---
+
                 if previous_filtered_mag_mT is None: previous_filtered_mag_mT = raw_mT
                 filt_mT = (MAGNETISM_FILTER_ALPHA * raw_mT) + ((1-MAGNETISM_FILTER_ALPHA)*previous_filtered_mag_mT)
                 
-                g_last_live_magnetism_mT = filt_mT # ADD THIS LINE to store the filtered value
+                g_last_live_magnetism_mT = filt_mT
                 
                 previous_filtered_mag_mT = filt_mT
                 if abs(filt_mT) < 0.1: display_text = f"{filt_mT*1000:+.1f}µT"
