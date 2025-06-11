@@ -732,7 +732,7 @@ def clear_results_display(): # Unchanged
     if rv_magnetism_label: rv_magnetism_label.config(text=default_text)
     if rv_ldc_label: rv_ldc_label.config(text=default_text)
 
-def capture_and_classify(): # Unchanged
+def capture_and_classify(): # MODIFIED: Changed magnetism display string
     global lv_classify_button, window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, interpreter
     global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label
     global save_output_var # Need access to the checkbox variable
@@ -773,7 +773,8 @@ def capture_and_classify(): # Unchanged
         try:
             if abs(SENSITIVITY_V_PER_MILLITESLA) < 1e-9: raise ZeroDivisionError("Hall sens zero.")
             current_mag_mT = (avg_voltage - IDLE_VOLTAGE) / SENSITIVITY_V_PER_MILLITESLA
-            mag_display_text = f"{current_mag_mT:+.3f} mT"
+            # MODIFIED LINE: Display both the calculated magnetism and the raw voltage it was derived from.
+            mag_display_text = f"{current_mag_mT:+.3f} mT ({avg_voltage:.4f}V)"
             if IDLE_VOLTAGE == 0.0: mag_display_text += " (NoCal)"
         except Exception as e_calc: mag_display_text = "CalcErr"; print(f"Warn: Mag calc: {e_calc}"); sensor_warning = True
     else: mag_display_text = "ReadErr"; print("ERROR: Hall read fail."); sensor_warning = True
