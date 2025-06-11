@@ -933,7 +933,7 @@ def update_magnetism(): # MODIFIED: Added a deadzone to prevent drift
 
                 # --- NEW: Deadzone to Prevent Drift Accumulation ---
                 # Define a threshold to ignore minor drift, e.g., 1.5 microteslas.
-                drift_threshold_mT = 0.0015
+                drift_threshold_mT = 0.0005
                 # If the new, raw reading is smaller than the threshold, treat it as zero.
                 # This stops the filter from accumulating small drift errors over time.
                 if abs(raw_mT) < drift_threshold_mT:
