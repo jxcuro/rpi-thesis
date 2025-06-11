@@ -732,7 +732,7 @@ def clear_results_display(): # Unchanged
     if rv_magnetism_label: rv_magnetism_label.config(text=default_text)
     if rv_ldc_label: rv_ldc_label.config(text=default_text)
 
-def capture_and_classify(): # MODIFIED: Changed magnetism display string
+def capture_and_classify(): # MODIFIED: Added conditional unit display (mT/µT) for magnetism
     global lv_classify_button, window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, interpreter
     global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label
     global save_output_var # Need access to the checkbox variable
@@ -773,8 +773,17 @@ def capture_and_classify(): # MODIFIED: Changed magnetism display string
         try:
             if abs(SENSITIVITY_V_PER_MILLITESLA) < 1e-9: raise ZeroDivisionError("Hall sens zero.")
             current_mag_mT = (avg_voltage - IDLE_VOLTAGE) / SENSITIVITY_V_PER_MILLITESLA
-            # MODIFIED LINE: Display both the calculated magnetism and the raw voltage it was derived from.
-            mag_display_text = f"{current_mag_mT:+.3f} mT ({avg_voltage:.4f}V)"
+
+            # MODIFIED SECTION: Add logic to switch between mT and µT for the display text
+            # This makes the results view consistent with the live view's formatting.
+            if abs(current_mag_mT) < 0.1:
+                # If the value is small, display it in microteslas (µT)
+                mag_display_text = f"{current_mag_mT * 1000:+.1f}µT ({avg_voltage:.4f}V)"
+            else:
+                # Otherwise, display it in milliteslas (mT)
+                mag_display_text = f"{current_mag_mT:+.2f}mT ({avg_voltage:.4f}V)"
+            # END MODIFIED SECTION
+
             if IDLE_VOLTAGE == 0.0: mag_display_text += " (NoCal)"
         except Exception as e_calc: mag_display_text = "CalcErr"; print(f"Warn: Mag calc: {e_calc}"); sensor_warning = True
     else: mag_display_text = "ReadErr"; print("ERROR: Hall read fail."); sensor_warning = True
@@ -829,7 +838,6 @@ def capture_and_classify(): # MODIFIED: Changed magnetism display string
 
     show_results_view()
     print("="*10 + " Capture & Classify Complete " + "="*10 + "\n")
-
 
 def calibrate_sensors(): # Unchanged (Silent version)
     global IDLE_VOLTAGE, IDLE_RP_VALUE, window, previous_filtered_mag_mT
