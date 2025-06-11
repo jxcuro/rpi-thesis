@@ -168,6 +168,7 @@ numerical_scaler = None
 
 RP_DISPLAY_BUFFER = deque(maxlen=LDC_DISPLAY_BUFFER_SIZE)
 previous_filtered_mag_mT = None
+g_last_live_magnetism_mT = 0.0 # ADD THIS LINE
 
 # --- GUI Globals ---
 window = None
@@ -732,10 +733,10 @@ def clear_results_display(): # Unchanged
     if rv_magnetism_label: rv_magnetism_label.config(text=default_text)
     if rv_ldc_label: rv_ldc_label.config(text=default_text)
 
-def capture_and_classify(): # MODIFIED: Added conditional unit display (mT/µT) for magnetism
+def capture_and_classify(): # MODIFIED: Uses live filtered value instead of new reading
     global lv_classify_button, window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, interpreter
     global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label
-    global save_output_var # Need access to the checkbox variable
+    global save_output_var, g_last_live_magnetism_mT # Add g_last_live_magnetism_mT here
 
     print("\n" + "="*10 + " Capture & Classify Triggered " + "="*10)
     if not interpreter:
@@ -765,29 +766,34 @@ def capture_and_classify(): # MODIFIED: Added conditional unit display (mT/µT) 
         show_live_view()
         return
 
-    # ... (Sensor reading and AI processing) ...
-    print(f"Reading sensors for classification ({NUM_SAMPLES_CALIBRATION} samples)...")
-    avg_voltage = get_averaged_hall_voltage(num_samples=NUM_SAMPLES_CALIBRATION)
-    current_mag_mT, mag_display_text, sensor_warning = None, "N/A", False
-    if avg_voltage is not None:
+    # --- MODIFIED SENSOR READING SECTION ---
+    print(f"Capturing live sensor values for classification...")
+    
+    # Use the last filtered magnetism value from the live display loop.
+    # The separate, high-sample reading for Hall sensor is now removed.
+    current_mag_mT = g_last_live_magnetism_mT
+    mag_display_text, sensor_warning = "N/A", False
+    
+    if current_mag_mT is not None:
         try:
-            if abs(SENSITIVITY_V_PER_MILLITESLA) < 1e-9: raise ZeroDivisionError("Hall sens zero.")
-            current_mag_mT = (avg_voltage - IDLE_VOLTAGE) / SENSITIVITY_V_PER_MILLITESLA
-
-            # MODIFIED SECTION: Add logic to switch between mT and µT for the display text
-            # This makes the results view consistent with the live view's formatting.
+            # Format the captured live value. The raw voltage is no longer available,
+            # so it has been removed from the display string.
             if abs(current_mag_mT) < 0.1:
-                # If the value is small, display it in microteslas (µT)
-                mag_display_text = f"{current_mag_mT * 1000:+.1f}µT ({avg_voltage:.4f}V)"
+                mag_display_text = f"{current_mag_mT * 1000:+.1f}µT"
             else:
-                # Otherwise, display it in milliteslas (mT)
-                mag_display_text = f"{current_mag_mT:+.2f}mT ({avg_voltage:.4f}V)"
-            # END MODIFIED SECTION
+                mag_display_text = f"{current_mag_mT:+.2f}mT"
 
             if IDLE_VOLTAGE == 0.0: mag_display_text += " (NoCal)"
-        except Exception as e_calc: mag_display_text = "CalcErr"; print(f"Warn: Mag calc: {e_calc}"); sensor_warning = True
-    else: mag_display_text = "ReadErr"; print("ERROR: Hall read fail."); sensor_warning = True
+        except Exception as e_calc: 
+            mag_display_text = "CalcErr"
+            print(f"Warn: Mag calc: {e_calc}")
+            sensor_warning = True
+    else:
+        mag_display_text = "ReadErr"
+        print("ERROR: Hall read fail.")
+        sensor_warning = True
 
+    # LDC reading remains unchanged as it's a separate sensor.
     avg_rp_val = get_averaged_rp_data(num_samples=NUM_SAMPLES_CALIBRATION)
     current_rp_raw, ldc_display_text = None, "N/A"
     if avg_rp_val is not None:
@@ -798,6 +804,7 @@ def capture_and_classify(): # MODIFIED: Added conditional unit display (mT/µT) 
         else: ldc_display_text += " (NoCal)"
     else: ldc_display_text = "ReadErr"; print("ERROR: LDC read fail."); sensor_warning = True
     if sensor_warning: print("WARNING: Sensor issues may affect classification.")
+    # --- END OF MODIFIED SECTION ---
 
     model_inputs = preprocess_input(img_captured_pil, current_mag_mT, current_rp_raw)
     if model_inputs is None:
@@ -812,10 +819,8 @@ def capture_and_classify(): # MODIFIED: Added conditional unit display (mT/µT) 
     predicted_label, confidence = postprocess_output(output_data)
     print(f"--- Classification Result: Prediction='{predicted_label}', Confidence={confidence:.1%} ---")
 
-    # --- NEW: Check if saving is enabled and save if so ---
     if save_output_var and save_output_var.get() == 1:
         save_result_screenshot(img_captured_pil, predicted_label, confidence, mag_display_text, ldc_display_text)
-    # --- End NEW ---
 
     send_sorting_signal(predicted_label)
 
@@ -913,8 +918,10 @@ def update_camera_feed(): # Unchanged
                  lv_camera_label.configure(image='', text="Camera Failed"); lv_camera_label.img_tk = None
     if window and window.winfo_exists(): window.after(CAMERA_UPDATE_INTERVAL_MS, update_camera_feed)
 
-def update_magnetism(): # Unchanged
+def update_magnetism(): # MODIFIED: Stores the latest live value globally
     global lv_magnetism_label, window, previous_filtered_mag_mT, IDLE_VOLTAGE, hall_sensor
+    global g_last_live_magnetism_mT # Add this to access the global
+
     if not window or not window.winfo_exists(): return
     display_text = "N/A"
     if hall_sensor:
@@ -925,6 +932,9 @@ def update_magnetism(): # Unchanged
                 raw_mT = (avg_v - IDLE_VOLTAGE) / SENSITIVITY_V_PER_MILLITESLA
                 if previous_filtered_mag_mT is None: previous_filtered_mag_mT = raw_mT
                 filt_mT = (MAGNETISM_FILTER_ALPHA * raw_mT) + ((1-MAGNETISM_FILTER_ALPHA)*previous_filtered_mag_mT)
+                
+                g_last_live_magnetism_mT = filt_mT # ADD THIS LINE to store the filtered value
+                
                 previous_filtered_mag_mT = filt_mT
                 if abs(filt_mT) < 0.1: display_text = f"{filt_mT*1000:+.1f}µT"
                 else: display_text = f"{filt_mT:+.2f}mT"
