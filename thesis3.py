@@ -1,13 +1,11 @@
-# CODE 3.0.19 - AI Metal Classifier GUI with GPIO Automation
+# CODE 3.0.20 - AI Metal Classifier GUI with Semi-Automation
 # Description: Displays live sensor data and camera feed.
 #              Automatically calibrates every 0.5s when GPIO 23 is LOW.
-#              On a LOW-to-HIGH signal on GPIO 23, waits 2s then automatically
-#              captures, classifies, and sends a sorting signal.
-#              The Calibrate and Classify buttons have been removed from the GUI.
-# Version: 3.0.19 - Replaced manual buttons with an automated control loop on GPIO 23.
-#                  - Removed Calibrate and Classify buttons from the GUI.
-#                  - Added a status label to indicate automation is active.
-#                  - Cleaned up code related to the removed buttons.
+#              Classification is triggered manually via a button on the GUI.
+# Version: 3.0.20 - Changed from fully automatic to semi-automatic mode.
+#                  - Removed GPIO HIGH signal for classification.
+#                  - Re-introduced the "Capture & Classify" button for manual triggering.
+#                  - Kept the GPIO LOW signal for continuous auto-calibration.
 # FIXED:       Potential mismatch between sensor data processing and scaler expectation.
 # DEBUG:       Enhanced prints in capture_and_classify, preprocess_input, run_inference, postprocess_output.
 
@@ -79,13 +77,13 @@ except ImportError:
 try:
     import RPi.GPIO as GPIO # For controlling Chip Select pin and sorting pins
     RPi_GPIO_AVAILABLE = True
-    print("RPi.GPIO library imported successfully (needed for LDC CS, Sorting, and Automation Control).")
+    print("RPi.GPIO library imported successfully (needed for LDC CS, Sorting, and Auto-Calibration).")
 except ImportError:
-    print("Warning: RPi.GPIO library not found. LDC CS control, Sorting, and Automation Control will be disabled.")
+    print("Warning: RPi.GPIO library not found. LDC CS control, Sorting, and Auto-Calibration will be disabled.")
 except RuntimeError:
-    print("Warning: RPi.GPIO library likely requires root privileges (sudo). LDC CS, Sorting, and Automation Control may fail.")
+    print("Warning: RPi.GPIO library likely requires root privileges (sudo). LDC CS, Sorting, and Auto-Calibration may fail.")
 except Exception as e:
-    print(f"Warning: Error importing RPi.GPIO library: {e}. LDC CS control, Sorting, and Automation Control disabled.")
+    print(f"Warning: Error importing RPi.GPIO library: {e}. LDC CS control, Sorting, and Auto-Calibration disabled.")
 
 
 # --- Sorting GPIO Configuration ---
@@ -94,10 +92,10 @@ SORTING_DATA_PIN_LSB = 16 # BCM Pin for LSB of sorting data
 SORTING_DATA_PIN_MID = 6  # BCM Pin for MID/MSB of sorting data (2-bit signal)
 SORTING_DATA_READY_PIN = 26 # BCM Pin to signal data is ready for sorter
 
-# --- NEW: Automation GPIO Configuration ---
-CONTROL_PIN = 23 # BCM Pin (Physical Pin 16) for automation control
-CONTROL_PIN_SETUP_OK = False # Tracks if the control pin was set up
-CONTROL_CHECK_INTERVAL_MS = 50 # How often to check the control pin (in milliseconds)
+# --- MODIFIED: Renamed for clarity, now only for calibration ---
+CALIBRATION_PIN = 23 # BCM Pin (Physical Pin 16) for auto-calibration control
+CALIBRATION_PIN_SETUP_OK = False # Tracks if the control pin was set up
+CALIBRATION_CHECK_INTERVAL_MS = 50 # How often to check the control pin (in milliseconds)
 
 
 # ==================================
@@ -176,14 +174,13 @@ main_frame = None
 live_view_frame = None
 results_view_frame = None
 label_font, readout_font, button_font, title_font, result_title_font, result_value_font, pred_font = (None,) * 7
-# MODIFIED: Removed lv_classify_button and lv_calibrate_button
-lv_camera_label, lv_magnetism_label, lv_ldc_label, lv_save_checkbox = (None,) * 4 
+# MODIFIED: Added lv_classify_button back
+lv_camera_label, lv_magnetism_label, lv_ldc_label, lv_classify_button, lv_save_checkbox = (None,) * 5 
 rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, rv_classify_another_button = (None,) * 6
 placeholder_img_tk = None
 save_output_var = None
 
-# --- NEW: State for GPIO Automation ---
-g_previous_control_state = None # Tracks GPIO 23 state to detect rising edges
+# --- NEW: State for GPIO Auto-Calibration ---
 g_last_calibration_time = 0     # Timestamp of the last auto-calibration
 
 # =========================
@@ -192,8 +189,8 @@ g_last_calibration_time = 0     # Timestamp of the last auto-calibration
 def initialize_hardware():
     global camera, i2c, ads, hall_sensor, spi, ldc_initialized, CS_PIN
     global SORTING_GPIO_ENABLED, RPi_GPIO_AVAILABLE
-    # MODIFIED: Changed to new control pin variables
-    global CONTROL_PIN_SETUP_OK, CONTROL_PIN
+    # MODIFIED: Changed variable names
+    global CALIBRATION_PIN_SETUP_OK, CALIBRATION_PIN
 
     print("\n--- Initializing Hardware ---")
 
@@ -287,19 +284,19 @@ def initialize_hardware():
         SORTING_GPIO_ENABLED = False
 
 
-    # --- MODIFIED: Automation Control Pin Initialization ---
+    # --- MODIFIED: Auto-Calibration Pin Initialization ---
     if gpio_bcm_mode_set:
-        print(f"Attempting to initialize GPIO pin {CONTROL_PIN} for Automation Control...")
+        print(f"Attempting to initialize GPIO pin {CALIBRATION_PIN} for Auto-Calibration...")
         try:
-            GPIO.setup(CONTROL_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-            CONTROL_PIN_SETUP_OK = True
-            print(f"Automation Control Pin {CONTROL_PIN} set as INPUT with PULL-DOWN.")
+            GPIO.setup(CALIBRATION_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+            CALIBRATION_PIN_SETUP_OK = True
+            print(f"Auto-Calibration Pin {CALIBRATION_PIN} set as INPUT with PULL-DOWN.")
         except Exception as e:
-            print(f"ERROR: Failed to set up Automation Control Pin {CONTROL_PIN}: {e}")
-            CONTROL_PIN_SETUP_OK = False
+            print(f"ERROR: Failed to set up Auto-Calibration Pin {CALIBRATION_PIN}: {e}")
+            CALIBRATION_PIN_SETUP_OK = False
     else:
-        print(f"Skipping Automation Control Pin {CONTROL_PIN} setup (RPi.GPIO not available or BCM mode failed).")
-        CONTROL_PIN_SETUP_OK = False
+        print(f"Skipping Auto-Calibration Pin {CALIBRATION_PIN} setup (RPi.GPIO not available or BCM mode failed).")
+        CALIBRATION_PIN_SETUP_OK = False
 
     # --- Create Testing Folder ---
     try:
@@ -586,16 +583,23 @@ def send_sorting_signal(material_label):
 def calibrate_and_show_live_view():
     """Calls sensor calibration and then switches back to the live view."""
     print("--- 'Classify Another' clicked, running a single calibration ---")
-    calibrate_sensors() # Run a single calibration when returning to the live view
-    show_live_view()    # Switch back to live view
+    calibrate_sensors(is_manual_call=True) 
+    show_live_view()
 
-# MODIFIED: Removed button state management logic
+# MODIFIED: Added button state management logic back
 def show_live_view():
-    global live_view_frame, results_view_frame, interpreter
+    global live_view_frame, results_view_frame, lv_classify_button, interpreter
     if results_view_frame and results_view_frame.winfo_ismapped():
         results_view_frame.pack_forget()
     if live_view_frame and not live_view_frame.winfo_ismapped():
         live_view_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    # Manage classify button state
+    if lv_classify_button:
+        if interpreter: # AI is ready
+            lv_classify_button.config(state=tk.NORMAL, text="Capture & Classify")
+        else: # AI not ready
+            lv_classify_button.config(state=tk.DISABLED, text="Classify (AI Failed)")
 
 def show_results_view():
     global live_view_frame, results_view_frame
@@ -615,38 +619,29 @@ def save_result_screenshot(image_pil, prediction, confidence, mag_text, ldc_text
     testing_folder = os.path.join(BASE_PATH, TESTING_FOLDER_NAME)
 
     try:
-        # Ensure the folder exists (it should, but check again)
         os.makedirs(testing_folder, exist_ok=True)
     except Exception as e:
         print(f"ERROR: Cannot create/access testing folder '{testing_folder}': {e}")
         messagebox.showerror("Save Error", f"Could not create/access folder:\n{testing_folder}")
         return
 
-    # Find the next available filename (data_1.png, data_2.png, etc.)
     i = 1
     while True:
         filename = os.path.join(testing_folder, f"data_{i}.png")
         if not os.path.exists(filename):
             break
         i += 1
-        if i > 9999: # Safety break
+        if i > 9999:
             print("ERROR: More than 9999 result files exist. Cannot save.")
             messagebox.showerror("Save Error", "Too many result files exist.")
             return
 
     # --- Create Composite Image ---
-    IMG_WIDTH = 400
-    IMG_HEIGHT = 600
-    BG_COLOR = "white"
-    TEXT_COLOR = "black"
-    MARGIN = 20
-    IMG_DISPLAY_WIDTH_SS = RESULT_IMG_DISPLAY_WIDTH # 280
-    FONT_SIZE_TITLE = 20
-    FONT_SIZE_TEXT = 16
-    LINE_SPACING = 5 # Pixels between lines
+    IMG_WIDTH = 400; IMG_HEIGHT = 600; BG_COLOR = "white"; TEXT_COLOR = "black"
+    MARGIN = 20; IMG_DISPLAY_WIDTH_SS = RESULT_IMG_DISPLAY_WIDTH; FONT_SIZE_TITLE = 20
+    FONT_SIZE_TEXT = 16; LINE_SPACING = 5
 
     try:
-        # Try finding common fonts, fallback to default
         try:
             font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", FONT_SIZE_TITLE)
             font_text = ImageFont.truetype("DejaVuSans.ttf", FONT_SIZE_TEXT)
@@ -657,25 +652,17 @@ def save_result_screenshot(image_pil, prediction, confidence, mag_text, ldc_text
 
         ss_img = Image.new('RGB', (IMG_WIDTH, IMG_HEIGHT), BG_COLOR)
         draw = ImageDraw.Draw(ss_img)
-
         y_pos = MARGIN
-
-        # Title
         title_w, title_h = draw.textsize("Classification Result", font=font_title)
         draw.text(((IMG_WIDTH - title_w) / 2, y_pos), "Classification Result", fill=TEXT_COLOR, font=font_title)
         y_pos += title_h + 15
-
-        # Display image (resize as done for the results view)
         w, h_img = image_pil.size
         aspect = h_img / w if w > 0 else 0.75
         display_h = int(IMG_DISPLAY_WIDTH_SS * aspect) if aspect > 0 else int(IMG_DISPLAY_WIDTH_SS * 0.75)
         img_disp = image_pil.resize((IMG_DISPLAY_WIDTH_SS, max(1, display_h)), Image.Resampling.LANCZOS)
-
         img_x = (IMG_WIDTH - IMG_DISPLAY_WIDTH_SS) // 2
         ss_img.paste(img_disp, (img_x, y_pos))
         y_pos += display_h + 20
-
-        # Details
         details = [
             (f"Material:", f"{prediction}", font_title),
             (f"Confidence:", f"{confidence:.1%}", font_text),
@@ -683,28 +670,21 @@ def save_result_screenshot(image_pil, prediction, confidence, mag_text, ldc_text
             (f" Magnetism:", f"{mag_text}", font_text),
             (f" LDC Reading:", f"{ldc_text}", font_text),
         ]
-
-        # Find max label width for alignment
         max_label_w = 0
         for label, _, font in details:
             lw, _ = draw.textsize(label, font=font)
             max_label_w = max(max_label_w, lw)
-
         value_x = MARGIN + max_label_w + 10
-
         for label, value, font in details:
-            _, lh = draw.textsize("A", font=font) # Get line height
+            _, lh = draw.textsize("A", font=font)
             if value:
                 draw.text((MARGIN, y_pos), label, fill=TEXT_COLOR, font=font)
                 draw.text((value_x, y_pos), value, fill=TEXT_COLOR, font=font)
-            else: # For separator text
+            else:
                 draw.text((MARGIN, y_pos), label, fill=TEXT_COLOR, font=font)
             y_pos += lh + LINE_SPACING
-
-        # Save the image
         ss_img.save(filename)
         print(f"Result saved successfully to: {filename}")
-
     except Exception as e:
         print(f"ERROR: Failed to create or save screenshot: {e}")
         traceback.print_exc()
@@ -730,13 +710,13 @@ def clear_results_display():
     if rv_magnetism_label: rv_magnetism_label.config(text=default_text)
     if rv_ldc_label: rv_ldc_label.config(text=default_text)
 
-# MODIFIED: Removed all references to lv_classify_button
+# MODIFIED: Added button state management logic back
 def capture_and_classify():
-    global window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, interpreter
+    global lv_classify_button, window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, interpreter
     global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label
     global save_output_var, g_last_live_magnetism_mT
 
-    print("\n" + "="*10 + " Automatic Classification Triggered " + "="*10)
+    print("\n" + "="*10 + " Capture & Classify Triggered " + "="*10)
     if not interpreter:
         messagebox.showerror("Error", "AI Model is not initialized. Cannot classify.")
         print("Classification aborted: AI not ready."); return
@@ -744,14 +724,16 @@ def capture_and_classify():
         messagebox.showerror("Error", "Camera is not available. Cannot capture image.")
         print("Classification aborted: Camera not ready."); return
 
-    # --- REMOVED: No button to disable ---
+    # Disable button during processing
+    if lv_classify_button:
+        lv_classify_button.config(state=tk.DISABLED, text="Processing...")
     window.update_idletasks()
 
     ret, frame = camera.read()
     if not ret or frame is None:
         messagebox.showerror("Capture Error", "Failed to capture image from camera.")
         print("ERROR: Failed to read frame from camera.")
-        show_live_view() # Return to live view on failure
+        show_live_view()
         return
     try:
         img_captured_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
@@ -765,23 +747,15 @@ def capture_and_classify():
     print(f"Capturing live sensor values for classification...")
     current_mag_mT = g_last_live_magnetism_mT
     mag_display_text, sensor_warning = "N/A", False
-    
     if current_mag_mT is not None:
         try:
-            if abs(current_mag_mT) < 0.1:
-                mag_display_text = f"{current_mag_mT * 1000:+.1f}µT"
-            else:
-                mag_display_text = f"{current_mag_mT:+.2f}mT"
-
+            if abs(current_mag_mT) < 0.1: mag_display_text = f"{current_mag_mT * 1000:+.1f}µT"
+            else: mag_display_text = f"{current_mag_mT:+.2f}mT"
             if IDLE_VOLTAGE == 0.0: mag_display_text += " (NoCal)"
         except Exception as e_calc: 
-            mag_display_text = "CalcErr"
-            print(f"Warn: Mag calc: {e_calc}")
-            sensor_warning = True
+            mag_display_text = "CalcErr"; print(f"Warn: Mag calc: {e_calc}"); sensor_warning = True
     else:
-        mag_display_text = "ReadErr"
-        print("ERROR: Hall read fail.")
-        sensor_warning = True
+        mag_display_text = "ReadErr"; print("ERROR: Hall read fail."); sensor_warning = True
 
     avg_rp_val = get_averaged_rp_data(num_samples=NUM_SAMPLES_CALIBRATION)
     current_rp_raw, ldc_display_text = None, "N/A"
@@ -793,17 +767,12 @@ def capture_and_classify():
         else: ldc_display_text += " (NoCal)"
     else: ldc_display_text = "ReadErr"; print("ERROR: LDC read fail."); sensor_warning = True
     if sensor_warning: print("WARNING: Sensor issues may affect classification.")
-    # --- END OF SENSOR SECTION ---
 
     model_inputs = preprocess_input(img_captured_pil, current_mag_mT, current_rp_raw)
-    if model_inputs is None:
-        messagebox.showerror("AI Error", "Data preprocessing failed."); print("ERROR: Preprocessing abort.")
-        show_live_view(); return
+    if model_inputs is None: messagebox.showerror("AI Error", "Data preprocessing failed."); print("ERROR: Preprocessing abort."); show_live_view(); return
 
     output_data = run_inference(model_inputs)
-    if output_data is None:
-        messagebox.showerror("AI Error", "AI model inference failed."); print("ERROR: Inference abort.")
-        show_live_view(); return
+    if output_data is None: messagebox.showerror("AI Error", "AI model inference failed."); print("ERROR: Inference abort."); show_live_view(); return
 
     predicted_label, confidence = postprocess_output(output_data)
     print(f"--- Classification Result: Prediction='{predicted_label}', Confidence={confidence:.1%} ---")
@@ -833,43 +802,35 @@ def capture_and_classify():
     show_results_view()
     print("="*10 + " Capture & Classify Complete " + "="*10 + "\n")
 
-# MODIFIED: Removed all button state management
-def calibrate_sensors():
+# MODIFIED: Made it silent unless called manually
+def calibrate_sensors(is_manual_call=False):
     global IDLE_VOLTAGE, IDLE_RP_VALUE, window, previous_filtered_mag_mT
     global hall_sensor, ldc_initialized
 
-    # Do not print the header every 0.5s to avoid spam. A simple message is enough.
+    if is_manual_call:
+        print("\n" + "="*10 + " Manual Sensor Calibration Triggered " + "="*10)
+
     hall_avail, ldc_avail = hall_sensor is not None, ldc_initialized
     if not hall_avail and not ldc_avail:
-        return # Silently fail if no sensors
+        if is_manual_call: print("Warning: Calibration - No sensors available.")
+        return
+    if not window or not window.winfo_exists(): return
 
-    if not window or not window.winfo_exists():
-        return # Silently fail if GUI is gone
-
-    # This function is now silent for the automatic loop
-    
-    hall_ok, ldc_ok = False, False
     if hall_avail:
         avg_v = get_averaged_hall_voltage(num_samples=NUM_SAMPLES_CALIBRATION)
-        if avg_v is not None: 
-            IDLE_VOLTAGE = avg_v
-            hall_ok = True
-        else: 
-            IDLE_VOLTAGE = 0.0
+        if avg_v is not None: IDLE_VOLTAGE = avg_v
+        else: IDLE_VOLTAGE = 0.0
     
     if ldc_avail:
         avg_rp = get_averaged_rp_data(num_samples=NUM_SAMPLES_CALIBRATION)
-        if avg_rp is not None: 
-            IDLE_RP_VALUE = int(round(avg_rp))
-            ldc_ok = True
-        else: 
-            IDLE_RP_VALUE = 0
+        if avg_rp is not None: IDLE_RP_VALUE = int(round(avg_rp))
+        else: IDLE_RP_VALUE = 0
 
     previous_filtered_mag_mT = None
     
-    # Only print a summary if calibration was actually attempted
-    if hall_avail or ldc_avail:
-        print(f"Auto-Calibrate: Hall Idle={IDLE_VOLTAGE:.4f}V, LDC Idle={IDLE_RP_VALUE}")
+    # Only print a summary if the call was manual or to avoid spam
+    if is_manual_call:
+        print(f"Calibration Results: Hall Idle={IDLE_VOLTAGE:.4f}V, LDC Idle={IDLE_RP_VALUE}")
 
 
 def update_camera_feed():
@@ -909,8 +870,7 @@ def update_magnetism():
                 if abs(SENSITIVITY_V_PER_MILLITESLA) < 1e-9: raise ZeroDivisionError("Sens0")
                 raw_mT = (avg_v - IDLE_VOLTAGE) / SENSITIVITY_V_PER_MILLITESLA
                 drift_threshold_mT = 0.0005
-                if abs(raw_mT) < drift_threshold_mT:
-                    raw_mT = 0.0
+                if abs(raw_mT) < drift_threshold_mT: raw_mT = 0.0
                 if previous_filtered_mag_mT is None: previous_filtered_mag_mT = raw_mT
                 filt_mT = (MAGNETISM_FILTER_ALPHA * raw_mT) + ((1-MAGNETISM_FILTER_ALPHA)*previous_filtered_mag_mT)
                 g_last_live_magnetism_mT = filt_mT
@@ -942,72 +902,49 @@ def update_ldc_reading():
     if lv_ldc_label and lv_ldc_label.cget("text") != display_text: lv_ldc_label.config(text=display_text)
     if window and window.winfo_exists(): window.after(GUI_UPDATE_INTERVAL_MS, update_ldc_reading)
 
-# --- NEW: Automation Control Loop Function ---
-def manage_automation_flow():
+# --- MODIFIED: This function now ONLY handles auto-calibration ---
+def manage_auto_calibration():
     """
-    Checks the state of the control GPIO pin to manage calibration and classification.
-    - If pin is LOW: Calibrates every 0.5 seconds.
-    - On LOW to HIGH transition: Stops calibration, waits 2s, triggers classification.
+    Checks the state of the calibration GPIO pin.
+    If the pin is LOW, it calibrates the sensors every 0.5 seconds.
     """
-    global window, g_previous_control_state, g_last_calibration_time
-    global CONTROL_PIN, CONTROL_PIN_SETUP_OK, RPi_GPIO_AVAILABLE
+    global window, g_last_calibration_time
+    global CALIBRATION_PIN, CALIBRATION_PIN_SETUP_OK, RPi_GPIO_AVAILABLE
 
-    # Stop if the window is closed or GPIO is not ready
-    if not window or not window.winfo_exists():
-        return
-    if not CONTROL_PIN_SETUP_OK or not RPi_GPIO_AVAILABLE:
-        # Reschedule to check again later in case GPIO setup was delayed
+    if not window or not window.winfo_exists(): return
+    if not CALIBRATION_PIN_SETUP_OK or not RPi_GPIO_AVAILABLE:
         if window.winfo_exists():
-            window.after(CONTROL_CHECK_INTERVAL_MS, manage_automation_flow)
+            window.after(CALIBRATION_CHECK_INTERVAL_MS, manage_auto_calibration)
         return
     
     try:
-        current_state = GPIO.input(CONTROL_PIN)
-        
-        # On the first run, initialize the previous state to the current state
-        if g_previous_control_state is None:
-            g_previous_control_state = current_state
-            print(f"Initial state of control pin {CONTROL_PIN} is {'HIGH' if current_state else 'LOW'}.")
-
-        # RISING EDGE DETECTED (LOW -> HIGH): Trigger Classification
-        if current_state == GPIO.HIGH and g_previous_control_state == GPIO.LOW:
-            print(f"AUTOMATION: Rising edge on GPIO {CONTROL_PIN}. Scheduling classification in 2 seconds...")
-            # Schedule the classification task after a 2-second delay
-            window.after(2000, capture_and_classify)
-        
-        # PIN STATE IS LOW: Perform periodic calibration
-        elif current_state == GPIO.LOW:
+        # If pin is LOW, perform periodic calibration
+        if GPIO.input(CALIBRATION_PIN) == GPIO.LOW:
             current_time = time.time()
-            # Check if 0.5 seconds (500ms) have passed since the last calibration
             if (current_time - g_last_calibration_time) >= 0.5:
-                calibrate_sensors() # This is now a silent, quick function
-                g_last_calibration_time = current_time # Reset the timer
-
-        # Update the state for the next check cycle
-        g_previous_control_state = current_state
-
+                calibrate_sensors(is_manual_call=False)
+                g_last_calibration_time = current_time
     except Exception as e:
-        print(f"ERROR: Could not read Automation Control Pin {CONTROL_PIN}: {e}")
+        print(f"ERROR: Could not read Auto-Calibration Pin {CALIBRATION_PIN}: {e}")
 
-    # Reschedule this function to run again
     if window.winfo_exists():
-        window.after(CONTROL_CHECK_INTERVAL_MS, manage_automation_flow)
+        window.after(CALIBRATION_CHECK_INTERVAL_MS, manage_auto_calibration)
 
 
 # ======================
 # === GUI Setup ========
 # ======================
-# MODIFIED: Removed buttons and added a status label.
+# MODIFIED: Added Classify button back.
 def setup_gui():
     global window, main_frame, placeholder_img_tk, live_view_frame, results_view_frame
-    global lv_camera_label, lv_magnetism_label, lv_ldc_label, lv_save_checkbox
+    global lv_camera_label, lv_magnetism_label, lv_ldc_label, lv_classify_button, lv_save_checkbox
     global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label, rv_classify_another_button
     global label_font, readout_font, button_font, title_font, result_title_font, result_value_font, pred_font
     global save_output_var
 
     print("Setting up GUI...")
     window = tk.Tk()
-    window.title("AI Metal Classifier v3.0.19 (RPi - GPIO Automation)") # Updated title
+    window.title("AI Metal Classifier v3.0.20 (RPi - Semi-Auto)") # Updated title
     window.geometry("800x600")
     style = ttk.Style()
     available_themes = style.theme_names(); style.theme_use('clam' if 'clam' in available_themes else 'default')
@@ -1039,23 +976,17 @@ def setup_gui():
     ttk.Label(lv_readings_frame, text="Magnetism:").grid(row=0, column=0, sticky="w", padx=(0, 8)); lv_magnetism_label = ttk.Label(lv_readings_frame, text="Init...", style="Readout.TLabel"); lv_magnetism_label.grid(row=0, column=1, sticky="ew")
     ttk.Label(lv_readings_frame, text="LDC (Delta):").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(2,0)); lv_ldc_label = ttk.Label(lv_readings_frame, text="Init...", style="Readout.TLabel"); lv_ldc_label.grid(row=1, column=1, sticky="ew", pady=(2,0))
     
-    # --- MODIFIED: Actions frame now contains a status label and checkbox ---
-    lv_actions_frame = ttk.Labelframe(lv_controls_frame, text=" Status & Options ", padding="8 4 8 8")
+    # --- MODIFIED: Actions frame now contains the button and checkbox ---
+    lv_actions_frame = ttk.Labelframe(lv_controls_frame, text=" Actions ", padding="8 4 8 8")
     lv_actions_frame.grid(row=1, column=0, sticky="new", pady=(0,10)); lv_actions_frame.columnconfigure(0, weight=1)
     
-    # NEW: Status Label instead of buttons
-    status_label_font = tkFont.Font(family="DejaVu Sans", size=10, weight="bold")
-    ttk.Label(
-        lv_actions_frame, 
-        text="Automated Control Active", 
-        font=status_label_font, 
-        foreground="#006400" # Dark Green
-    ).grid(row=0, column=0, sticky="ew", pady=(4,8))
+    # ADDED: Classify button is back
+    lv_classify_button = ttk.Button(lv_actions_frame, text="Capture & Classify", command=capture_and_classify)
+    lv_classify_button.grid(row=0, column=0, sticky="ew", pady=(4,4))
     
-    # Checkbox
     save_output_var = tk.IntVar(value=0)
     lv_save_checkbox = ttk.Checkbutton(lv_actions_frame, text="Save Result Screenshot", variable=save_output_var)
-    lv_save_checkbox.grid(row=2, column=0, sticky="w", pady=(6,4), padx=(5,0))
+    lv_save_checkbox.grid(row=1, column=0, sticky="w", pady=(6,4), padx=(5,0))
     # --- END MODIFIED SECTION ---
 
     results_view_frame = ttk.Frame(main_frame, padding="10 10 10 10"); results_view_frame.rowconfigure(0, weight=1); results_view_frame.rowconfigure(1, weight=0); results_view_frame.rowconfigure(2, weight=1)
@@ -1083,7 +1014,6 @@ def setup_gui():
 # ==========================
 # === Main Execution =======
 # ==========================
-# MODIFIED: Starts the new automation loop.
 def run_application():
     global window, lv_camera_label, lv_magnetism_label, lv_ldc_label
     global interpreter, camera, hall_sensor, ldc_initialized
@@ -1105,8 +1035,8 @@ def run_application():
     update_camera_feed()
     update_magnetism()
     update_ldc_reading()
-    # MODIFIED: Start the new automation flow loop
-    manage_automation_flow() 
+    # MODIFIED: Start the auto-calibration loop
+    manage_auto_calibration() 
 
     print("Starting Tkinter main loop... (Press Ctrl+C in console to exit)")
     try:
@@ -1158,7 +1088,7 @@ def cleanup_resources():
 # === Main Entry Point =====
 # ==========================
 if __name__ == '__main__':
-    print("="*30 + "\n Starting AI Metal Classifier (RPi GPIO Automation) \n" + "="*30)
+    print("="*30 + "\n Starting AI Metal Classifier (RPi Semi-Auto) \n" + "="*30)
     hw_init_attempted = False
     try:
         initialize_hardware(); hw_init_attempted = True
