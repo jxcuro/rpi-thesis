@@ -4,9 +4,9 @@
 #              - While GPIO 23 is LOW, it continuously auto-calibrates.
 #              - After classifying, it enters a PAUSED state, ignoring new triggers.
 #              - Clicking 'Classify Another' RE-ARMS the system for the next trigger.
-# Version: 3.0.24 - MODIFIED: Disabled live sensor display on the main screen to better reflect
-#                  -           the visual-only nature of the model. The GUI labels now show 'N/A'.
-#                  -           Sensor readings are still taken once during classification for the results screen.
+# Version: 3.0.25 - MODIFIED: All sensor measurement and calibration has been completely
+#                  -           REMOVED from the classification process to be purely visual.
+#                  -           The app no longer reads sensors when classification is triggered.
 # FIXED:       Potential mismatch between sensor data processing and scaler expectation.
 # DEBUG:       Enhanced prints in capture_and_classify, preprocess_input, run_inference, postprocess_output.
 
@@ -548,13 +548,13 @@ def send_sorting_signal(material_label):
 # ==============================
 # === View Switching Logic ===
 # ==============================
-# MODIFIED: Re-arms the trigger system
+# MODIFIED: Calibration call removed for visual-only model.
 def calibrate_and_show_live_view():
-    """Re-arms the trigger, runs a calibration, and shows the live view."""
+    """Re-arms the trigger and shows the live view."""
     global g_accepting_triggers
     print("\n--- 'Classify Another' clicked: Re-arming GPIO trigger ---")
     g_accepting_triggers = True # Re-arm the system
-    calibrate_sensors(is_manual_call=True)
+    # calibrate_sensors(is_manual_call=True) # Calibration disabled for visual-only model.
     show_live_view()
 
 def show_live_view():
@@ -673,9 +673,9 @@ def clear_results_display():
     if rv_magnetism_label: rv_magnetism_label.config(text=default_text)
     if rv_ldc_label: rv_ldc_label.config(text=default_text)
 
-# MODIFIED: Disarms the trigger system
+# MODIFIED: Sensor reading has been fully removed from this function.
 def capture_and_classify():
-    global window, camera, IDLE_VOLTAGE, IDLE_RP_VALUE, interpreter
+    global window, camera, interpreter
     global rv_image_label, rv_prediction_label, rv_confidence_label, rv_magnetism_label, rv_ldc_label
     global save_output_var
     global g_accepting_triggers
@@ -704,44 +704,12 @@ def capture_and_classify():
         print(f"ERROR: Failed converting captured frame to PIL Image: {e}"); show_live_view(); return
 
     # --- SENSOR READING SECTION ---
-    # NOTE: These values are read for display on the results screen but are NOT used by the AI model.
-    print(f"Capturing fresh sensor values for display purposes...")
-    mag_display_text, sensor_warning = "N/A", False
-    current_mag_mT = None # Start with None
-
-    # Perform a fresh, more stable reading for the classification
-    avg_v_capture = get_averaged_hall_voltage(num_samples=NUM_SAMPLES_CALIBRATION)
-    if avg_v_capture is not None and abs(SENSITIVITY_V_PER_MILLITESLA) > 1e-9:
-        try:
-            current_mag_mT = (avg_v_capture - IDLE_VOLTAGE) / SENSITIVITY_V_PER_MILLITESLA
-
-            # Format the display text for the results screen
-            if abs(current_mag_mT) < 0.1:
-                mag_display_text = f"{current_mag_mT * 1000:+.1f}µT"
-            else:
-                mag_display_text = f"{current_mag_mT:+.2f}mT"
-
-            if IDLE_VOLTAGE == 0.0:
-                mag_display_text += " (NoCal)"
-        except Exception as e_calc:
-            mag_display_text = "CalcErr"
-            print(f"Warn: Magnetism calculation for capture failed: {e_calc}")
-            sensor_warning = True
-    else:
-        mag_display_text = "ReadErr"
-        print("ERROR: Hall sensor read failed during capture.")
-        sensor_warning = True
-
-    avg_rp_val = get_averaged_rp_data(num_samples=NUM_SAMPLES_CALIBRATION)
-    current_rp_raw, ldc_display_text = None, "N/A"
-    if avg_rp_val is not None:
-        current_rp_raw = avg_rp_val; current_rp_int = int(round(avg_rp_val))
-        delta_rp_display = current_rp_int - IDLE_RP_VALUE
-        ldc_display_text = f"{current_rp_int}"
-        if IDLE_RP_VALUE != 0: ldc_display_text += f" (Δ{delta_rp_display:+,})"
-        else: ldc_display_text += " (NoCal)"
-    else: ldc_display_text = "ReadErr"; print("ERROR: LDC read fail."); sensor_warning = True
-    if sensor_warning: print("WARNING: Sensor issues may affect classification.")
+    # NOTE: All sensor readings are disabled for this visual-only version.
+    print("Skipping sensor readings for visual-only classification.")
+    current_mag_mT = None
+    current_rp_raw = None
+    mag_display_text = "N/A"
+    ldc_display_text = "N/A"
 
     model_inputs = preprocess_input(img_captured_pil, current_mag_mT, current_rp_raw)
     if model_inputs is None: messagebox.showerror("AI Error", "Data preprocessing failed."); print("ERROR: Preprocessing abort."); show_live_view(); return
@@ -885,11 +853,10 @@ def update_ldc_reading():
     if lv_ldc_label and lv_ldc_label.cget("text") != display_text: lv_ldc_label.config(text=display_text)
     if window and window.winfo_exists(): window.after(GUI_UPDATE_INTERVAL_MS, update_ldc_reading)
 
-# --- MODIFIED: Automation loop now checks the g_accepting_triggers flag ---
+# MODIFIED: Auto-calibration disabled for visual-only model.
 def manage_automation_flow():
     """
-    Checks the GPIO pin to manage calibration and classification.
-    - If pin is LOW: Calibrates every 0.5 seconds.
+    Checks the GPIO pin to manage classification.
     - On LOW->HIGH transition: Triggers classification ONLY if the system is armed.
     """
     global window, g_previous_control_state, g_last_calibration_time, g_accepting_triggers
@@ -912,12 +879,9 @@ def manage_automation_flow():
             print(f"AUTOMATION: Armed and rising edge detected. Scheduling classification...")
             window.after(2000, capture_and_classify) # 2s delay
 
-        # STATE IS LOW: Perform periodic calibration
+        # STATE IS LOW: Auto-calibration is disabled as sensors are not used for the AI model.
         elif current_state == GPIO.LOW:
-            current_time = time.time()
-            if (current_time - g_last_calibration_time) >= 0.5:
-                calibrate_sensors(is_manual_call=False)
-                g_last_calibration_time = current_time
+            pass
 
         g_previous_control_state = current_state
 
@@ -940,7 +904,7 @@ def setup_gui():
 
     print("Setting up GUI...")
     window = tk.Tk()
-    window.title("AI Metal Classifier v3.0.24 (RPi - Gated Automation - Visual Only)")
+    window.title("AI Metal Classifier v3.0.25 (RPi - Gated Automation - Visual Only)")
     window.geometry("800x600")
     style = ttk.Style()
     available_themes = style.theme_names(); style.theme_use('clam' if 'clam' in available_themes else 'default')
@@ -969,7 +933,7 @@ def setup_gui():
     lv_camera_label.grid(row=0, column=0, padx=(0, 5), pady=0, sticky="nsew")
     lv_controls_frame = ttk.Frame(live_view_frame); lv_controls_frame.grid(row=0, column=1, sticky="nsew", padx=(5,0)); lv_controls_frame.columnconfigure(0, weight=1)
     lv_readings_frame = ttk.Labelframe(lv_controls_frame, text=" Live Readings ", padding="8 4 8 4"); lv_readings_frame.grid(row=0, column=0, sticky="new", pady=(0, 10)); lv_readings_frame.columnconfigure(1, weight=1)
-    
+
     # MODIFIED: Changed initial text from "Init..." to "N/A"
     ttk.Label(lv_readings_frame, text="Magnetism:").grid(row=0, column=0, sticky="w", padx=(0, 8)); lv_magnetism_label = ttk.Label(lv_readings_frame, text="N/A", style="Readout.TLabel"); lv_magnetism_label.grid(row=0, column=1, sticky="ew")
     ttk.Label(lv_readings_frame, text="LDC (Delta):").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(2,0)); lv_ldc_label = ttk.Label(lv_readings_frame, text="N/A", style="Readout.TLabel"); lv_ldc_label.grid(row=1, column=1, sticky="ew", pady=(2,0))
@@ -1002,7 +966,7 @@ def setup_gui():
     ttk.Label(rv_details_frame, text="Material:", font=result_title_font).grid(row=res_row, column=0, sticky="w", padx=(0,5)); rv_prediction_label = ttk.Label(rv_details_frame, text="---", style="Prediction.TLabel"); rv_prediction_label.grid(row=res_row, column=1, sticky="ew", padx=5); res_row += 1
     ttk.Label(rv_details_frame, text="Confidence:", font=result_title_font).grid(row=res_row, column=0, sticky="w", padx=(0,5), pady=(3,0)); rv_confidence_label = ttk.Label(rv_details_frame, text="---", style="ResultValue.TLabel"); rv_confidence_label.grid(row=res_row, column=1, sticky="ew", padx=5, pady=(3,0)); res_row += 1
     ttk.Separator(rv_details_frame, orient='horizontal').grid(row=res_row, column=0, columnspan=2, sticky='ew', pady=8); res_row += 1
-    ttk.Label(rv_details_frame, text="Sensor Values (For Info):", font=result_title_font).grid(row=res_row, column=0, columnspan=2, sticky="w", pady=(0,3)); res_row += 1
+    ttk.Label(rv_details_frame, text="Sensor Values (Ignored):", font=result_title_font).grid(row=res_row, column=0, columnspan=2, sticky="w", pady=(0,3)); res_row += 1
     ttk.Label(rv_details_frame, text=" Magnetism:", font=result_title_font).grid(row=res_row, column=0, sticky="w", padx=(5,5)); rv_magnetism_label = ttk.Label(rv_details_frame, text="---", style="ResultValue.TLabel"); rv_magnetism_label.grid(row=res_row, column=1, sticky="ew", padx=5); res_row += 1
     ttk.Label(rv_details_frame, text=" LDC Reading:", font=result_title_font).grid(row=res_row, column=0, sticky="w", padx=(5,5)); rv_ldc_label = ttk.Label(rv_details_frame, text="---", style="ResultValue.TLabel"); rv_ldc_label.grid(row=res_row, column=1, sticky="ew", padx=5); res_row += 1
     rv_classify_another_button = ttk.Button(rv_content_frame, text="<< Classify Another", command=calibrate_and_show_live_view); rv_classify_another_button.grid(row=3, column=0, columnspan=2, pady=(15, 5))
