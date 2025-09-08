@@ -4,10 +4,9 @@
 #              - While GPIO 23 is LOW, it continuously auto-calibrates.
 #              - After classifying, it enters a PAUSED state, ignoring new triggers.
 #              - Clicking 'Classify Another' RE-ARMS the system for the next trigger.
-# Version: 3.0.23 - MODIFIED: Adapted for a VISUAL-ONLY AI model. Sensor inputs (magnetism, LDC)
-#                  -           are no longer passed to the model for inference. The numerical
-#                  -           scaler (joblib) has been removed as a dependency.
-#                  - MODIFIED: Model filename changed to 'visual_model.tflite'.
+# Version: 3.0.24 - MODIFIED: Disabled live sensor display on the main screen to better reflect
+#                  -           the visual-only nature of the model. The GUI labels now show 'N/A'.
+#                  -           Sensor readings are still taken once during classification for the results screen.
 # FIXED:       Potential mismatch between sensor data processing and scaler expectation.
 # DEBUG:       Enhanced prints in capture_and_classify, preprocess_input, run_inference, postprocess_output.
 
@@ -941,7 +940,7 @@ def setup_gui():
 
     print("Setting up GUI...")
     window = tk.Tk()
-    window.title("AI Metal Classifier v3.0.23 (RPi - Gated Automation - Visual Only)")
+    window.title("AI Metal Classifier v3.0.24 (RPi - Gated Automation - Visual Only)")
     window.geometry("800x600")
     style = ttk.Style()
     available_themes = style.theme_names(); style.theme_use('clam' if 'clam' in available_themes else 'default')
@@ -970,8 +969,10 @@ def setup_gui():
     lv_camera_label.grid(row=0, column=0, padx=(0, 5), pady=0, sticky="nsew")
     lv_controls_frame = ttk.Frame(live_view_frame); lv_controls_frame.grid(row=0, column=1, sticky="nsew", padx=(5,0)); lv_controls_frame.columnconfigure(0, weight=1)
     lv_readings_frame = ttk.Labelframe(lv_controls_frame, text=" Live Readings ", padding="8 4 8 4"); lv_readings_frame.grid(row=0, column=0, sticky="new", pady=(0, 10)); lv_readings_frame.columnconfigure(1, weight=1)
-    ttk.Label(lv_readings_frame, text="Magnetism:").grid(row=0, column=0, sticky="w", padx=(0, 8)); lv_magnetism_label = ttk.Label(lv_readings_frame, text="Init...", style="Readout.TLabel"); lv_magnetism_label.grid(row=0, column=1, sticky="ew")
-    ttk.Label(lv_readings_frame, text="LDC (Delta):").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(2,0)); lv_ldc_label = ttk.Label(lv_readings_frame, text="Init...", style="Readout.TLabel"); lv_ldc_label.grid(row=1, column=1, sticky="ew", pady=(2,0))
+    
+    # MODIFIED: Changed initial text from "Init..." to "N/A"
+    ttk.Label(lv_readings_frame, text="Magnetism:").grid(row=0, column=0, sticky="w", padx=(0, 8)); lv_magnetism_label = ttk.Label(lv_readings_frame, text="N/A", style="Readout.TLabel"); lv_magnetism_label.grid(row=0, column=1, sticky="ew")
+    ttk.Label(lv_readings_frame, text="LDC (Delta):").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(2,0)); lv_ldc_label = ttk.Label(lv_readings_frame, text="N/A", style="Readout.TLabel"); lv_ldc_label.grid(row=1, column=1, sticky="ew", pady=(2,0))
 
     lv_actions_frame = ttk.Labelframe(lv_controls_frame, text=" Status & Options ", padding="8 4 8 8")
     lv_actions_frame.grid(row=1, column=0, sticky="new", pady=(0,10)); lv_actions_frame.columnconfigure(0, weight=1)
@@ -1032,8 +1033,9 @@ def run_application():
 
     print("Starting GUI update loops...")
     update_camera_feed()
-    update_magnetism()
-    update_ldc_reading()
+    # MODIFIED: Live sensor updates disabled for visual-only version.
+    # update_magnetism()
+    # update_ldc_reading()
     manage_automation_flow()
 
     print("Starting Tkinter main loop... (Press Ctrl+C in console to exit)")
