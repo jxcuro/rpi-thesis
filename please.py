@@ -856,7 +856,16 @@ def capture_and_classify():
     print(f"\n--- HIERARCHICAL RESULT: Prediction='{predicted_label}', Confidence={confidence:.1%} ---")
 
     # --- Handle Saving and Sorting ---
-    mag_display_text = f"{current_mag_mT:+.2f}mT" if current_mag_mT is not None else "ReadErr"
+    # ### CORRECTED SECTION ###
+    mag_display_text = ""
+    if current_mag_mT is not None:
+        if abs(current_mag_mT) < 0.1:
+            mag_display_text = f"{current_mag_mT * 1000:+.1f}µT"
+        else:
+            mag_display_text = f"{current_mag_mT:+.2f}mT"
+    else:
+        mag_display_text = "ReadErr"
+        
     ldc_display_text = f"{int(round(current_rp_raw))}" if current_rp_raw is not None else "ReadErr"
 
     if save_output_var and save_output_var.get() == 1:
@@ -884,7 +893,6 @@ def capture_and_classify():
 
     show_results_view()
     print("="*10 + " Capture & Classify Complete " + "="*10 + "\n")
-
 
 def calibrate_sensors(is_manual_call=False):
     global IDLE_VOLTAGE, IDLE_RP_VALUE
