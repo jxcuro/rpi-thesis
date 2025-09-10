@@ -4,10 +4,10 @@
 #              - While GPIO 23 is LOW, it continuously auto-calibrates.
 #              - After classifying, it enters a PAUSED state, ignoring new triggers.
 #              - Clicking 'Classify Another' RE-ARMS the system for the next trigger.
-# Version: 3.0.25 - ADDED: Diagnostic prints for raw and scaled magnetism values in capture_and_classify.
-#                  - MODIFIED: Updated scaler parameters for magnetism and resistivity models.
+# Version: 3.0.24 - MODIFIED: Updated scaler parameters for magnetism and resistivity models.
 #                  - MODIFIED: Adjusted hierarchical model weights based on sensor reliability feedback.
 #                  - MODIFIED: Adapted data preprocessing to support multi-feature numerical models (for new resistivity model).
+#                  - REMOVED:  Removed joblib dependency; scaler parameters are now hardcoded.
 # FIXED:       Potential mismatch between sensor data processing and scaler expectation.
 # DEBUG:       Enhanced prints in capture_and_classify, preprocess_input, run_inference, postprocess_output.
 
@@ -138,21 +138,23 @@ LABELS_PATH = os.path.join(BASE_PATH, LABELS_FILENAME)
 # --- Hierarchical Weights (Must sum to 1.0) ---
 # MODIFIED: Adjusted weights based on sensor reliability. Resistivity is highest, magnetism is lowest.
 MODEL_WEIGHTS = {
-    'visual': 0.0,
-    'magnetism': 1.0,
-    'resistivity': 0.0
+    'visual': 0.35,
+    'magnetism': 0.20,
+    'resistivity': 0.45
 }
 
 # --- Hardcoded Scaler Parameters ---
-# MODIFIED: Updated with new scaler values.
+# NOTE: Replace these placeholder values with the actual mean and scale
+#       values from your trained scalers. Each list should have one value
+#       per feature the model expects (e.g., [value1] for 1 feature).
 SCALER_PARAMS = {
     'magnetism': {
-        'mean': [-0.00009759], 
-        'scale': [0.00110163]
+        'mean': [-0.09772435897435897],  # Updated Mean of magnetism training data
+        'scale': [2.7667626552866245]   # Updated Std Dev of magnetism training data
     },
     'resistivity': {
-        'mean': [60828.55404120, -758.49825674], 
-        'scale': [1602.70306847, 1609.04865444]
+        'mean': [60822.433333333334],   # Updated Mean of LDC RP training data
+        'scale': [1466.1544266984124]    # Updated Std Dev of LDC RP training data
     }
 }
 # =========================================
@@ -598,8 +600,7 @@ def postprocess_hierarchical_output(outputs):
     for model_type, raw_output in outputs.items():
         weight = MODEL_WEIGHTS.get(model_type, 0)
         if weight == 0:
-            # This is now expected during testing, so we don't print a warning.
-            # print(f"Warning: No weight found for model '{model_type}', skipping its output.")
+            print(f"Warning: No weight found for model '{model_type}', skipping its output.")
             continue
         
         if raw_output is not None and raw_output.shape == (1, num_classes):
@@ -854,18 +855,6 @@ def capture_and_classify():
     print("\n--- Preprocessing all inputs ---")
     visual_input = preprocess_visual_input(img_captured_pil, input_details_visual)
     magnetism_input = preprocess_numerical_input(current_mag_mT, 'magnetism', input_details_magnetism)
-    
-    # --- DIAGNOSTICS START ---
-    print(f"\n--- DIAGNOSTICS ---")
-    print(f"Raw Magnetism (mT): {current_mag_mT}")
-    if magnetism_input is not None:
-        # The scaled value is inside the numpy array, access it with [0][0]
-        print(f"Scaled Magnetism Input to AI: {magnetism_input[0][0]:.4f}")
-    else:
-        print("Scaled Magnetism Input to AI: None (Preprocessing failed)")
-    print("---------------------\n")
-    # --- DIAGNOSTICS END ---
-
     # MODIFIED: Pass the list of features to the preprocessor
     resistivity_input = preprocess_numerical_input(resistivity_features, 'resistivity', input_details_resistivity)
     
@@ -1087,7 +1076,7 @@ def setup_gui():
 
     print("Setting up GUI...")
     window = tk.Tk()
-    window.title("AI Metal Classifier v3.0.25 (RPi - Hierarchical Ensemble)") # ### MODIFIED ###
+    window.title("AI Metal Classifier v3.0.24 (RPi - Hierarchical Ensemble)") # ### MODIFIED ###
     window.geometry("800x600")
     style = ttk.Style()
     available_themes = style.theme_names(); style.theme_use('clam' if 'clam' in available_themes else 'default')
