@@ -138,9 +138,9 @@ LABELS_PATH = os.path.join(BASE_PATH, LABELS_FILENAME)
 # --- Hierarchical Weights (Must sum to 1.0) ---
 # MODIFIED: Adjusted weights based on sensor reliability. Resistivity is highest, magnetism is lowest.
 MODEL_WEIGHTS = {
-    'visual': 0.35,
-    'magnetism': 0.20,
-    'resistivity': 0.45
+    'visual': 0.0,
+    'magnetism': 1.0,
+    'resistivity': 0.0
 }
 
 # --- Hardcoded Scaler Parameters ---
