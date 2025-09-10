@@ -144,15 +144,17 @@ MODEL_WEIGHTS = {
 }
 
 # --- Hardcoded Scaler Parameters ---
-# MODIFIED: Updated with new scaler values.
+# NOTE: Replace these placeholder values with the actual mean and scale
+#       values from your trained scalers. Each list should have one value
+#       per feature the model expects (e.g., [value1] for 1 feature).
 SCALER_PARAMS = {
     'magnetism': {
-        'mean': [-0.00009759], 
-        'scale': [0.00110163]
+        'mean': [-0.09772435897435897],  # Updated Mean of magnetism training data
+        'scale': [2.7667626552866245]   # Updated Std Dev of magnetism training data
     },
     'resistivity': {
-        'mean': [60828.55404120, -758.49825674], 
-        'scale': [1602.70306847, 1609.04865444]
+        'mean': [60822.433333333334],   # Updated Mean of LDC RP training data
+        'scale': [1466.1544266984124]    # Updated Std Dev of LDC RP training data
     }
 }
 # =========================================
